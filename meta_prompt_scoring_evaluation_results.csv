@@ -1,0 +1,3 @@
+Scoring LLM,Prompt Type,Generated Prompt,Metric Value,Number of Specs,Total Time Spent (seconds)
+gemini-v15-flash,Generated,Evaluate the runtime performance of the following two real-world code snippets. Determine if the second snippet demonstrates an improvement over the first. Keep your analysis concise and focused on runtime efficiency.,0.75,4,6.654938697814941
+gemini-v15-flash,Baseline,Compare the following two code snippets and determine if the second code has improved in runtime performance.,0.25,4,6.860937595367432
