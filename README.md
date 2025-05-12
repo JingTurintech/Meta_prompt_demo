@@ -1,70 +1,137 @@
-# Recommendation Impact Analysis Tool
+# Meta-Prompting Framework
 
-This Streamlit application analyzes how different recommendations affect runtime performance in optimization scenarios. The tool fetches optimization data, processes it, and visualizes the impact of various recommendations on runtime performance.
+A comprehensive framework for meta-prompt optimization and evaluation using Streamlit. This project provides tools for optimizing and evaluating prompts for code optimization tasks, with both local and project-based evaluation capabilities.
 
 ## Features
 
-* **Data Processing**: Fetches optimization data using the Falcon API client
-* **Statistical Analysis**: Fits Ordinary Least Squares (OLS) and Bayesian Ridge Regression linear regression models using statsmodels and scikit-learn to evaluate the impact of different recommendations
-* **Interactive Visualization**: Displays the impact of recommendations on runtime with interactive Plotly charts
+- **Meta-Prompt Optimization**: Generate and optimize prompts for code optimization tasks
+- **Multiple Evaluation Methods**: 
+  - Local benchmark-based evaluation
+  - Project-based evaluation using Artemis Falcon API
+- **Interactive UI**: Streamlit-based interface for:
+  - Prompt generation and optimization
+  - Code optimization evaluation
+  - Performance scoring and visualization
+- **Support for Multiple LLMs**: Compatible with various language models including:
+  - GPT-4
+  - Claude
+  - Gemini
+  - LLaMA
 
-![Dashboard](dashboard.png)
+## Project Structure
 
-## Requirements
+```
+.
+├── Meta-Prompt Core
+│   ├── meta_prompt_optimization.py           # Core optimization logic
+│   ├── meta_prompt_optimization_by_project.py    # Project-based optimization
+│   └── meta_prompt_optimization_enhanced_by_project.py  # Enhanced project optimization
+│
+├── Streamlit Applications
+│   ├── streamlit_app_optimization.py         # Basic optimization UI
+│   ├── streamlit_app_optimization_by_project.py    # Project-based UI
+│   └── streamlit_app_optimization_enhanced_by_project.py  # Enhanced project UI
+│
+├── Scoring and Evaluation
+│   ├── meta_prompt_scoring.py                # Scoring logic
+│   ├── meta_prompt_scoring_by_project.py     # Project-based scoring
+│   ├── streamlit_app_scoring.py              # Scoring UI
+│   └── streamlit_app_scoring_by_project.py   # Project-based scoring UI
+│
+└── Utilities
+    └── falcon_client.py                      # Artemis Falcon API client
+```
 
-- Python 3.11 or higher
-- Dependencies listed in requirements.txt
+## Prerequisites
 
-## Getting Started
+- Python 3.8 or higher
+- Streamlit
+- Access to Artemis Falcon API (for project-based features)
 
+## Installation
 
-
-### Installation
-
-1. Clone this repository
-2. Install the required dependencies:
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/JingTurintech/Meta_prompt_demo.git
+   cd Meta_prompt_demo
    ```
+
+2. Create and activate a virtual environment (recommended):
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. Install dependencies:
+   ```bash
    pip install -r requirements.txt
    ```
-3. Add your Thanos username and password to the .env file
 
-   A default .env file is provided targeting the production environment, but this is liable to become outdated.
-
-### Running the Application
-
-```
-streamlit run streamlit_app.py
-```
+4. Set up environment variables:
+   Create a `.env` file in the project root with:
+   ```
+   FALCON_API_KEY=your_falcon_api_key
+   VISION_API_KEY=your_vision_api_key
+   THANOS_API_KEY=your_thanos_api_key
+   ```
 
 ## Usage
 
-1. Enter your Optimization ID in the sidebar
-2. Verify the path to your environment file
-3. Use the sidebar to configure the confidence level and statistical method
-4. Click "Process Optimization" to analyze the data
-5. Explore the impact of different recommendations on runtime performance
+The framework provides two main workflows for evaluating and optimizing meta-prompts:
 
-# Design
+### 1. Code Optimization Workflow
 
-This application uses the following pipeline to retrieve, transform and analyse optimisation data:
+This workflow focuses on optimizing code using meta-prompts and evaluating the optimization results.
 
-## 1. Data Retrieval
-- **Source:** Falcon API via `FalconClientWrapper`
-- **Process:** Retrieves optimization solutions data using credentials from an environment file
-- **Output:** `SolutionsResponse` containing validated data.
+#### Local Optimization
+```bash
+streamlit run streamlit_app_optimization.py
+```
+- Uses local benchmarks for optimization
+- Suitable for initial prompt development and testing
 
-## 2. Data Transformation
-- **Function:** `transform()`
-- **Process:** Converts the raw `SolutionsResponse` into a tabular format (`SolutionsTabular`) ready for analysis
+#### Project-Based Optimization
+```bash
+streamlit run streamlit_app_optimization_by_project.py
+```
+- Integrates with Artemis Falcon API
+- Uses real project context for optimization
 
-## 3. Statistical Analysis
-- **Method Selection:** Based on a specified method (default: Ordinary Least Squares)
-- **Factory Pattern:** `get_model_fitter()` creates the appropriate model fitter
-- **Process:** Fits the selected statistical model to the tabular data and generates a `ModelAdapter`
+#### Enhanced Project Optimization
+```bash
+streamlit run streamlit_app_optimization_enhanced_by_project.py
+```
+- Advanced features including:
+  - Project information display
+  - Enhanced visualization
+  - Detailed performance metrics
+  - Real-time optimization tracking
 
-## 4. Analysis
-- **Process:** Uses the `ModelAdapter` to generate an `AnalysisResult` at the specified confidence level
+### 2. Scoring and Evaluation Workflow
 
-## Data Flow
+This workflow focuses on evaluating and comparing the effectiveness of different prompts.
 
-![Data Flow](data_flow.png)
+#### Local Scoring
+```bash
+streamlit run streamlit_app_scoring.py
+```
+- Evaluates prompts using local benchmarks
+- Provides basic scoring metrics
+- Suitable for quick prompt comparisons
+
+#### Project-Based Scoring
+```bash
+streamlit run streamlit_app_scoring_by_project.py
+```
+- Evaluates prompts in the context of real projects
+- Features:
+  - Comparative analysis of different prompts
+  - Performance visualization
+  - Project-specific metrics
+  - Integration with Artemis Falcon API
+
+## Configuration
+
+- Adjust LLM settings in the respective Python files
+- Modify optimization parameters through the Streamlit interface
+- Configure project-specific settings in the `.env` file

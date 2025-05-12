@@ -22,9 +22,8 @@ wheels/
 
 # Virtual Environment
 venv/
-env/
 ENV/
-.env
+env/
 
 # IDE
 .idea/
@@ -32,17 +31,12 @@ ENV/
 *.swp
 *.swo
 
+# Environment variables
+.env
+
 # Logs
 *.log
 
-# Local development settings
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Cache directories
-.cache/
-.pytest_cache/
-.coverage
-htmlcov/ 
+# Local development
+.DS_Store
+Thumbs.db 
