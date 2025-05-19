@@ -1,0 +1,364 @@
+{
+  "metadata": {
+    "collected_at": "20250519_124641",
+    "project_info": {
+      "project_id": "26ecc1a2-2b9c-4733-9d5d-07d0a6608686",
+      "name": "BitmapPlusPlus",
+      "description": null,
+      "language": "cpp",
+      "files": [
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp"
+      ]
+    }
+  },
+  "code_snippets": [
+    {
+      "id": "fc458ed3-356c-4feb-ad4b-43426648c180",
+      "content": "    Bitmap() noexcept\n      : m_pixels(),\n        m_width(0),\n        m_height(0) {\n    }",
+      "construct_id": "e63d7b09-e388-4d1c-b556-bdf20aabd160",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.414500",
+        "updated_at": "2025-03-13T18:04:24.414511",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 105,
+          "end": 109
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "GROUP_a655e",
+          "RANK 1",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "SIMILAR",
+          "CODE_REFERENCE"
+        ]
+      }
+    },
+    {
+      "id": "bffbf323-4547-46b9-bd66-18285861eaef",
+      "content": "    explicit Bitmap(const std::string &filename)\n      : m_pixels(),\n        m_width(0),\n        m_height(0) {\n      this->load(filename);\n    }",
+      "construct_id": "6a0eb2b3-5c4b-437e-a951-d26eb74c8ac1",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.415216",
+        "updated_at": "2025-03-13T18:04:24.415232",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 111,
+          "end": 116
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "GROUP_a655e",
+          "RANK 2",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "SIMILAR",
+          "CODE_REFERENCE"
+        ]
+      }
+    },
+    {
+      "id": "4d494c01-b0e2-4d46-9676-976195990af5",
+      "content": "    Bitmap(const std::int32_t width, const std::int32_t height)\n      : m_pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height)),\n        m_width(width),\n        m_height(height) {\n      if (width == 0 || height == 0)\n        throw Exception(\"Bitmap width and height must be > 0\");\n    }",
+      "construct_id": "9ab7503e-0d23-40ed-b497-67c157ae4905",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.416828",
+        "updated_at": "2025-03-13T18:04:24.416847",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 118,
+          "end": 124
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "GROUP_a655e",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 3",
+          "SIMILAR",
+          "CODE_REFERENCE"
+        ]
+      }
+    },
+    {
+      "id": "0f066929-4c8f-4531-bb8d-0d7c3a3156de",
+      "content": "    Bitmap(const Bitmap &other) = default; // Copy Constructor",
+      "construct_id": "ada66ed1-2c02-4551-84b9-4e8a2d5f5249",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.417679",
+        "updated_at": "2025-03-13T18:04:24.417693",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 126,
+          "end": 126
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 4",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "e92c3d8d-1722-4d68-8051-5d30072120ee",
+      "content": "    Bitmap(const Bitmap &other) = default; // Copy Constructor\n\n    Bitmap(Bitmap &&other) noexcept\n      : m_pixels(std::move(other.m_pixels)),\n        m_width(std::exchange(other.m_width, 0)),\n        m_height(std::exchange(other.m_height, 0)) {\n    }",
+      "construct_id": "9d73886e-2182-4b92-8fc3-480420f877e9",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.418679",
+        "updated_at": "2025-03-13T18:04:24.418693",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 126,
+          "end": 132
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 5"
+        ]
+      }
+    },
+    {
+      "id": "87c45572-6d56-4ef6-aaab-ff962be27cae",
+      "content": "    /**\n     * Draw a filled rect\n     */\n    void fill_rect(const std::int32_t x, const std::int32_t y, const std::int32_t width, const std::int32_t height,\n                   const Pixel color) {\n      if (!in_bounds(x, y) || !in_bounds(x + (width - 1), y + (height - 1)))\n        throw Exception(\n          \"Bitmap::fill_rect(\" + std::to_string(x) + \", \" + std::to_string(y) + \", \" + std::to_string(width) + \", \" +\n          std::to_string(height) + \"): x,y,w or h out of bounds\");\n\n      for (std::int32_t dx = x; dx < x + width; ++dx) {\n        for (std::int32_t dy = y; dy < y + height; ++dy) {\n          m_pixels[IX(dx, dy)] = color;\n        }\n      }\n    }",
+      "construct_id": "27fccfbf-3b93-4dc8-8db5-0036f9e72a09",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.419930",
+        "updated_at": "2025-03-13T18:04:24.419943",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 167,
+          "end": 182
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 6"
+        ]
+      }
+    },
+    {
+      "id": "635b9a79-fdfb-4c91-b1a5-fbb833cf832f",
+      "content": "    /**\n     *\tConverts 2D x,y coords into 1D index\n     */\n    [[nodiscard]] constexpr std::size_t IX(const std::int32_t x, const std::int32_t y) const noexcept {\n      return static_cast<std::size_t>(x) + static_cast<std::size_t>(m_width) * static_cast<std::size_t>(y);\n    }",
+      "construct_id": "3a157945-27e8-4208-9e9d-92804dedaf39",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.420894",
+        "updated_at": "2025-03-13T18:04:24.420907",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 570,
+          "end": 575
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 7"
+        ]
+      }
+    },
+    {
+      "id": "ef060e3c-069b-4469-9290-bc11c8423da0",
+      "content": "    std::uint8_t b; /* Red value */\n\n    constexpr Pixel() noexcept: r(0), g(0), b(0) {}",
+      "construct_id": "4d02c22c-ef8b-49d2-9c7c-19ea73a274ad",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.421857",
+        "updated_at": "2025-03-13T18:04:24.421871",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 44,
+          "end": 46
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 8",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "a3dd44d7-1308-4497-a09f-48fdeb4e998a",
+      "content": "    explicit constexpr Pixel(const std::int32_t rgb) noexcept: r((rgb >> 16) & 0xff), g((rgb >> 8) & 0xff),\n                                                               b((rgb >> 0x0) & 0xff) {}",
+      "construct_id": "84f8f411-156f-482c-b285-76d10055f4fa",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.422753",
+        "updated_at": "2025-03-13T18:04:24.422766",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 48,
+          "end": 49
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 9"
+        ]
+      }
+    },
+    {
+      "id": "dba5ea84-f509-45e1-a9e7-aaccedad580a",
+      "content": "    constexpr Pixel(std::uint8_t red, std::uint8_t green, std::uint8_t blue) noexcept: r(red), g(green), b(blue) {}",
+      "construct_id": "5c6b1815-f780-4550-8c8f-e168dc2c726d",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-13T18:04:24.423648",
+        "updated_at": "2025-03-13T18:04:24.423660",
+        "language": "cpp",
+        "file": "BitmapPlusPlus.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 51,
+          "end": 51
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 10",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    }
+  ]
+}

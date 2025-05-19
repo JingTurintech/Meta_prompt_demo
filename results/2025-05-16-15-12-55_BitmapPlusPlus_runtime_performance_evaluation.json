@@ -1,0 +1,601 @@
+{
+  "configuration": {
+    "project_id": "26ecc1a2-2b9c-4733-9d5d-07d0a6608686",
+    "project_info": {
+      "name": "BitmapPlusPlus",
+      "description": null,
+      "detected_language": "cpp",
+      "file_count": 10,
+      "files": [
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp",
+        "BitmapPlusPlus.hpp"
+      ]
+    },
+    "task": {
+      "name": "runtime_performance",
+      "description": "Optimize code for better runtime performance while maintaining functionality"
+    },
+    "llms": {
+      "optimization_llm": "gpt-4-o-mini",
+      "judge_llm": "gpt-4-o-mini"
+    },
+    "prompts": {
+      "baseline_prompt": "Improve the performance of the provided code. Try to find ways to reduce runtime, while keeping the main functionality of the code unchanged.",
+      "meta_prompt_template": "\nYou are an expert in code optimization. We need to generate a prompt that will help an LLM optimize code for {objective}.\n\n## Project Context\nProject Name: {project_name}\nProject Description: {project_description}\nPrimary Languages: {project_languages}\n\n## Task Context\n{task_description}\n\n## Current Prompt\n{current_prompt}\n\n## Target LLM Information\nTarget LLM: {target_llm}\n\n## Instructions\n1. Analyze the current prompt, project context, and task context\n2. Consider the target LLM's capabilities and limitations\n3. Generate an improved prompt that will help the LLM better optimize code for {objective}\n4. The prompt should be specific, clear, and focused on {objective}\n5. Consider the project's primary languages and context when generating the prompt\n6. Your response should contain only the improved prompt text, without any placeholders, formatting instructions, or additional text.\n7. The generated prompt should also not contain any placeholders, formatting instructions, or additional text.\n",
+      "judge_prompt_template": "You are an expert in code optimization and performance analysis. Compare the following two code snippets and determine which one would be better for improving runtime performance.\n\n## Task Context\nOptimize code for better runtime performance while maintaining functionality\n\nCode A:\n```python\n[Code A will be inserted here]\n```\n\nCode B:\n```python\n[Code B will be inserted here]\n```\n\nConsider the following aspects specific to improving runtime performance:\n1. Algorithmic complexity (Big O notation)\n2. Data structure efficiency and access patterns\n3. Loop optimizations and unnecessary iterations\n4. Memory access patterns and caching\n5. I/O operations and system calls\n6. Parallel processing opportunities\n7. Redundant computations\n\nRespond with ONLY ONE of these exact strings:\n- \"A\" if Code A is likely to be better for improving runtime performance\n- \"B\" if Code B is likely to be better for improving runtime performance\n- \"TIE\" if both codes would have similar performance for improving runtime performance\n\nYour response should contain only A, B, or TIE, nothing else."
+    }
+  },
+  "evaluation_results": {
+    "prompts": {
+      "baseline": "Improve the performance of the provided code. Try to find ways to reduce runtime, while keeping the main functionality of the code unchanged.",
+      "generated": "Analyze the provided C++ code for BitmapPlusPlus and identify specific areas where runtime performance can be improved. Focus on optimizing algorithms, reducing time complexity, minimizing memory usage, and leveraging efficient data structures. Ensure that the main functionality of the code remains unchanged while implementing these optimizations. Provide detailed explanations for each optimization suggestion, including potential trade-offs and impacts on performance."
+    },
+    "meta_prompt_used": "\nYou are an expert in code optimization. We need to generate a prompt that will help an LLM optimize code for improving runtime performance.\n\n## Project Context\nProject Name: BitmapPlusPlus\nProject Description: None\nPrimary Languages: Language.CPP\n\n## Task Context\nOptimize code for better runtime performance while maintaining functionality\n\n## Current Prompt\nImprove the performance of the provided code. Try to find ways to reduce runtime, while keeping the main functionality of the code unchanged.\n\n## Target LLM Information\nTarget LLM: gpt-4-o-mini\n\n## Instructions\n1. Analyze the current prompt, project context, and task context\n2. Consider the target LLM's capabilities and limitations\n3. Generate an improved prompt that will help the LLM better optimize code for improving runtime performance\n4. The prompt should be specific, clear, and focused on improving runtime performance\n5. Consider the project's primary languages and context when generating the prompt\n6. Your response should contain only the improved prompt text, without any placeholders, formatting instructions, or additional text.\n7. The generated prompt should also not contain any placeholders, formatting instructions, or additional text.\n",
+    "results": [
+      {
+        "spec_id": "fc458ed3-356c-4feb-ad4b-43426648c180",
+        "original_rating": 1500.0,
+        "baseline_rating": 1620.0,
+        "generated_rating": 1597.5,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1420.0,
+            "baseline": 1552.0,
+            "generated": 1555.0
+          },
+          "reverse_order": {
+            "original": 1580.0,
+            "baseline": 1688.0,
+            "generated": 1640.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 1.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 1.0
+          }
+        ],
+        "original_code": "    Bitmap() noexcept\n      : m_pixels(),\n        m_width(0),\n        m_height(0) {\n    }",
+        "baseline_code": "    Bitmap() noexcept\n      : m_width(0),\n        m_height(0),\n        m_pixels() { // Initialize m_pixels after width and height for potential performance improvement\n    }\n",
+        "generated_code": "    Bitmap() noexcept\n      : m_pixels(), // Consider using a more efficient data structure if applicable\n        m_width(0),\n        m_height(0) {\n    }\n"
+      },
+      {
+        "spec_id": "bffbf323-4547-46b9-bd66-18285861eaef",
+        "original_rating": 1500.0,
+        "baseline_rating": 1620.0,
+        "generated_rating": 1679.0,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1420.0,
+            "baseline": 1552.0,
+            "generated": 1632.0
+          },
+          "reverse_order": {
+            "original": 1580.0,
+            "baseline": 1688.0,
+            "generated": 1726.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 0.5
+          }
+        ],
+        "original_code": "    explicit Bitmap(const std::string &filename)\n      : m_pixels(),\n        m_width(0),\n        m_height(0) {\n      this->load(filename);\n    }",
+        "baseline_code": "    explicit Bitmap(const std::string &filename)\n      : m_pixels(),\n        m_width(0),\n        m_height(0) {\n      // Load the bitmap from the specified filename\n      this->load(filename);\n    }\n",
+        "generated_code": "    explicit Bitmap(const std::string &filename)\n      : m_pixels(), // Consider using a more efficient data structure if applicable\n        m_width(0),\n        m_height(0) {\n      this->load(filename);\n    }\n"
+      },
+      {
+        "spec_id": "4d494c01-b0e2-4d46-9676-976195990af5",
+        "original_rating": 1500.0,
+        "baseline_rating": 1675.5,
+        "generated_rating": 1324.5,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1580.0,
+            "baseline": 1711.0,
+            "generated": 1360.0
+          },
+          "reverse_order": {
+            "original": 1420.0,
+            "baseline": 1640.0,
+            "generated": 1289.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 1.0
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 0.0
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 1.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 1.0
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 1.0
+          }
+        ],
+        "original_code": "    Bitmap(const std::int32_t width, const std::int32_t height)\n      : m_pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height)),\n        m_width(width),\n        m_height(height) {\n      if (width == 0 || height == 0)\n        throw Exception(\"Bitmap width and height must be > 0\");\n    }",
+        "baseline_code": "    Bitmap(const std::int32_t width, const std::int32_t height)\n      : m_pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height)),\n        m_width(width),\n        m_height(height) {\n      // Check for zero dimensions early to avoid unnecessary calculations\n      if (width <= 0 || height <= 0)\n        throw Exception(\"Bitmap width and height must be > 0\");\n    }\n",
+        "generated_code": "    Bitmap(const std::int32_t width, const std::int32_t height)\n      : m_width(width),\n        m_height(height),\n        m_pixels(width > 0 && height > 0 ? static_cast<std::size_t>(width) * static_cast<std::size_t>(height) : 0) {\n      if (width <= 0 || height <= 0)\n        throw Exception(\"Bitmap width and height must be > 0\");\n    }\n"
+      },
+      {
+        "spec_id": "0f066929-4c8f-4531-bb8d-0d7c3a3156de",
+        "original_rating": 1500.0,
+        "baseline_rating": 1696.5,
+        "generated_rating": 1522.0,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1580.0,
+            "baseline": 1737.0,
+            "generated": 1592.0
+          },
+          "reverse_order": {
+            "original": 1420.0,
+            "baseline": 1656.0,
+            "generated": 1452.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 0.0
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 1.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 1.0
+          }
+        ],
+        "original_code": "    Bitmap(const Bitmap &other) = default; // Copy Constructor",
+        "baseline_code": "    Bitmap(const Bitmap &other) noexcept = default; // Copy Constructor\n",
+        "generated_code": "    Bitmap(const Bitmap &other) = default; // Copy Constructor\n"
+      },
+      {
+        "spec_id": "e92c3d8d-1722-4d68-8051-5d30072120ee",
+        "original_rating": 1656.0,
+        "baseline_rating": 1372.0,
+        "generated_rating": 1660.0,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1656.0,
+            "baseline": 1387.0,
+            "generated": 1649.0
+          },
+          "reverse_order": {
+            "original": 1656.0,
+            "baseline": 1357.0,
+            "generated": 1671.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 1.0
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 1.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 0.0
+          }
+        ],
+        "original_code": "    Bitmap(const Bitmap &other) = default; // Copy Constructor\n\n    Bitmap(Bitmap &&other) noexcept\n      : m_pixels(std::move(other.m_pixels)),\n        m_width(std::exchange(other.m_width, 0)),\n        m_height(std::exchange(other.m_height, 0)) {\n    }",
+        "baseline_code": "    Bitmap(const Bitmap &other) = default; // Copy Constructor\n\n    Bitmap(Bitmap &&other) noexcept\n      : m_pixels(std::move(other.m_pixels)),\n        m_width(other.m_width),\n        m_height(other.m_height) {\n        other.m_width = 0; // Set the moved-from object's width to 0\n        other.m_height = 0; // Set the moved-from object's height to 0\n    }\n",
+        "generated_code": "    Bitmap(const Bitmap &other) = default; // Copy Constructor\n\n    Bitmap(Bitmap &&other) noexcept\n      : m_pixels(std::move(other.m_pixels)),\n        m_width(std::exchange(other.m_width, 0)),\n        m_height(std::exchange(other.m_height, 0)) {\n    }\n"
+      },
+      {
+        "spec_id": "87c45572-6d56-4ef6-aaab-ff962be27cae",
+        "original_rating": 1344.0,
+        "baseline_rating": 1563.5,
+        "generated_rating": 1658.5,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1344.0,
+            "baseline": 1551.0,
+            "generated": 1671.0
+          },
+          "reverse_order": {
+            "original": 1344.0,
+            "baseline": 1576.0,
+            "generated": 1646.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 0.0
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 0.0
+          }
+        ],
+        "original_code": "    /**\n     * Draw a filled rect\n     */\n    void fill_rect(const std::int32_t x, const std::int32_t y, const std::int32_t width, const std::int32_t height,\n                   const Pixel color) {\n      if (!in_bounds(x, y) || !in_bounds(x + (width - 1), y + (height - 1)))\n        throw Exception(\n          \"Bitmap::fill_rect(\" + std::to_string(x) + \", \" + std::to_string(y) + \", \" + std::to_string(width) + \", \" +\n          std::to_string(height) + \"): x,y,w or h out of bounds\");\n\n      for (std::int32_t dx = x; dx < x + width; ++dx) {\n        for (std::int32_t dy = y; dy < y + height; ++dy) {\n          m_pixels[IX(dx, dy)] = color;\n        }\n      }\n    }",
+        "baseline_code": "    /**\n     * Draw a filled rect\n     */\n    void fill_rect(const std::int32_t x, const std::int32_t y, const std::int32_t width, const std::int32_t height,\n                   const Pixel color) {\n      if (!in_bounds(x, y) || !in_bounds(x + (width - 1), y + (height - 1)))\n        throw Exception(\n          \"Bitmap::fill_rect(\" + std::to_string(x) + \", \" + std::to_string(y) + \", \" + std::to_string(width) + \", \" +\n          std::to_string(height) + \"): x,y,w or h out of bounds\");\n\n      // Optimize by reducing the number of calls to IX and using a pointer to the pixel array\n      std::int32_t* pixelPtr = m_pixels.data() + IX(x, y);\n      for (std::int32_t dy = 0; dy < height; ++dy) {\n        std::fill(pixelPtr, pixelPtr + width, color);\n        pixelPtr += m_width; // Move to the next row\n      }\n    }\n",
+        "generated_code": "    /**\n     * Draw a filled rect\n     */\n    void fill_rect(const std::int32_t x, const std::int32_t y, const std::int32_t width, const std::int32_t height,\n                   const Pixel color) {\n      if (!in_bounds(x, y) || !in_bounds(x + (width - 1), y + (height - 1)))\n        throw Exception(\n          \"Bitmap::fill_rect(\" + std::to_string(x) + \", \" + std::to_string(y) + \", \" + std::to_string(width) + \", \" +\n          std::to_string(height) + \"): x,y,w or h out of bounds\");\n\n      // Optimize the loop by reducing the number of calculations inside the loop\n      const std::int32_t end_x = x + width;\n      const std::int32_t end_y = y + height;\n      const std::int32_t width_pixels = end_x - x; // Store width in a variable\n      const std::int32_t height_pixels = end_y - y; // Store height in a variable\n\n      // Use a single loop to fill the rectangle\n      for (std::int32_t dy = y; dy < end_y; ++dy) {\n        std::int32_t index = IX(x, dy); // Calculate the starting index for the row\n        for (std::int32_t dx = 0; dx < width_pixels; ++dx) {\n          m_pixels[index + dx] = color; // Fill the row using the pre-calculated index\n        }\n      }\n    }\n"
+      },
+      {
+        "spec_id": "635b9a79-fdfb-4c91-b1a5-fbb833cf832f",
+        "original_rating": 1500.0,
+        "baseline_rating": 1522.0,
+        "generated_rating": 1696.5,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1420.0,
+            "baseline": 1452.0,
+            "generated": 1656.0
+          },
+          "reverse_order": {
+            "original": 1580.0,
+            "baseline": 1592.0,
+            "generated": 1737.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 0.0
+          }
+        ],
+        "original_code": "    /**\n     *\tConverts 2D x,y coords into 1D index\n     */\n    [[nodiscard]] constexpr std::size_t IX(const std::int32_t x, const std::int32_t y) const noexcept {\n      return static_cast<std::size_t>(x) + static_cast<std::size_t>(m_width) * static_cast<std::size_t>(y);\n    }",
+        "baseline_code": "    /**\n     *\tConverts 2D x,y coords into 1D index\n     */\n    [[nodiscard]] constexpr std::size_t IX(const std::int32_t x, const std::int32_t y) const noexcept {\n      return static_cast<std::size_t>(x) + (static_cast<std::size_t>(m_width) * static_cast<std::size_t>(y));\n    }\n",
+        "generated_code": "    /**\n     *\tConverts 2D x,y coords into 1D index\n     */\n    [[nodiscard]] constexpr std::size_t IX(const std::int32_t x, const std::int32_t y) const noexcept {\n      return static_cast<std::size_t>(y) * static_cast<std::size_t>(m_width) + static_cast<std::size_t>(x);\n    }\n"
+      },
+      {
+        "spec_id": "ef060e3c-069b-4469-9290-bc11c8423da0",
+        "original_rating": 1656.0,
+        "baseline_rating": 1690.5,
+        "generated_rating": 1690.5,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1656.0,
+            "baseline": 1700.0,
+            "generated": 1685.0
+          },
+          "reverse_order": {
+            "original": 1656.0,
+            "baseline": 1681.0,
+            "generated": 1696.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 0.5
+          }
+        ],
+        "original_code": "    std::uint8_t b; /* Red value */\n\n    constexpr Pixel() noexcept: r(0), g(0), b(0) {}",
+        "baseline_code": "    std::uint8_t b; /* Red value */\n\n    constexpr Pixel() noexcept: r(0), g(0), b(0) {}\n",
+        "generated_code": "    std::uint8_t b; /* Red value */\n\n    constexpr Pixel() noexcept: r(0), g(0), b(0) {}\n"
+      },
+      {
+        "spec_id": "a3dd44d7-1308-4497-a09f-48fdeb4e998a",
+        "original_rating": 1344.0,
+        "baseline_rating": 1658.5,
+        "generated_rating": 1658.0,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1344.0,
+            "baseline": 1646.0,
+            "generated": 1665.0
+          },
+          "reverse_order": {
+            "original": 1344.0,
+            "baseline": 1671.0,
+            "generated": 1651.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 0.0
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 0.0
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 0.5
+          }
+        ],
+        "original_code": "    explicit constexpr Pixel(const std::int32_t rgb) noexcept: r((rgb >> 16) & 0xff), g((rgb >> 8) & 0xff),\n                                                               b((rgb >> 0x0) & 0xff) {}",
+        "baseline_code": "    explicit constexpr Pixel(const std::int32_t rgb) noexcept: r((rgb >> 16) & 0xff), g((rgb >> 8) & 0xff),\n                                                               b(rgb & 0xff) {}\n",
+        "generated_code": "    explicit constexpr Pixel(const std::int32_t rgb) noexcept: r((rgb >> 16) & 0xff), g((rgb >> 8) & 0xff),\n                                                               b(rgb & 0xff) {}\n"
+      },
+      {
+        "spec_id": "dba5ea84-f509-45e1-a9e7-aaccedad580a",
+        "original_rating": 1656.0,
+        "baseline_rating": 1690.5,
+        "generated_rating": 1690.5,
+        "ratings_by_order": {
+          "forward_order": {
+            "original": 1656.0,
+            "baseline": 1700.0,
+            "generated": 1685.0
+          },
+          "reverse_order": {
+            "original": 1656.0,
+            "baseline": 1681.0,
+            "generated": 1696.0
+          }
+        },
+        "comparisons": [
+          {
+            "order": 1,
+            "comparison": "original vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 1,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 1,
+            "comparison": "baseline vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "original vs baseline",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "original vs generated",
+            "score": 0.5
+          },
+          {
+            "order": 2,
+            "comparison": "baseline vs generated",
+            "score": 0.5
+          }
+        ],
+        "original_code": "    constexpr Pixel(std::uint8_t red, std::uint8_t green, std::uint8_t blue) noexcept: r(red), g(green), b(blue) {}",
+        "baseline_code": "    constexpr Pixel(std::uint8_t red, std::uint8_t green, std::uint8_t blue) noexcept: r(red), g(green), b(blue) {}\n",
+        "generated_code": "    constexpr Pixel(std::uint8_t red, std::uint8_t green, std::uint8_t blue) noexcept: r(red), g(green), b(blue) {}\n"
+      }
+    ],
+    "average_ratings": {
+      "original": 1515.6,
+      "baseline": 1610.9,
+      "generated": 1617.7
+    },
+    "average_ratings_by_order": {
+      "forward_order": {
+        "original": 1507.6,
+        "baseline": 1598.8,
+        "generated": 1615.0
+      },
+      "reverse_order": {
+        "original": 1523.6,
+        "baseline": 1623.0,
+        "generated": 1620.4
+      }
+    },
+    "statistics": {
+      "total_specs": 10,
+      "successful_specs": 10,
+      "failed_specs": 0
+    }
+  },
+  "metadata": {
+    "timestamp": "2025-05-16T15:12:55.975494",
+    "datetime": "2025-05-16-15-12-55"
+  }
+}

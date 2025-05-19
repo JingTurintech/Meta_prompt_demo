@@ -1,0 +1,369 @@
+{
+  "metadata": {
+    "collected_at": "20250519_130741",
+    "project_info": {
+      "project_id": "a732b310-6ec1-44b5-bf4d-ac4b3618a62d",
+      "name": "csv-parser",
+      "description": null,
+      "language": "cpp",
+      "files": [
+        "include/internal/csv_writer.hpp",
+        "include/internal/csv_row.cpp",
+        "include/internal/basic_csv_parser.cpp",
+        "include/internal/data_type.hpp",
+        "include/internal/csv_row.cpp",
+        "include/internal/csv_row.cpp",
+        "include/internal/data_type.hpp",
+        "include/internal/basic_csv_parser.hpp",
+        "include/internal/basic_csv_parser.cpp",
+        "include/internal/basic_csv_parser.cpp",
+        "build/_deps/catch2-src/src/catch2/internal/catch_decomposer.hpp",
+        "include/internal/col_names.cpp",
+        "include/internal/csv_row.hpp",
+        "include/internal/csv_row.hpp",
+        "include/internal/csv_row.hpp",
+        "include/internal/csv_utility.cpp",
+        "include/internal/csv_writer.hpp",
+        "include/internal/csv_writer.hpp",
+        "include/internal/csv_writer.hpp",
+        "include/internal/csv_row.hpp",
+        "include/internal/csv_row.hpp",
+        "include/internal/csv_row.hpp",
+        "include/internal/csv_reader.cpp",
+        "include/internal/basic_csv_parser.hpp"
+      ]
+    }
+  },
+  "code_snippets": [
+    {
+      "id": "f1650304-482d-45cb-8d1e-cbf45fb30220",
+      "content": "        /** Ends a line in 'out' and flushes, if Flush is true.*/\n        void end_out() {\n            out << '\\n';\n            IF_CONSTEXPR(Flush) out.flush();\n        }",
+      "construct_id": "5921580b-f29d-438f-9e93-5267bafbf5ef",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.667402",
+        "updated_at": "2025-03-14T18:27:35.667414",
+        "language": "cpp",
+        "file": "include/internal/csv_writer.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 357,
+          "end": 361
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "0661f684-d197-4f06-b167-b53364b21980",
+      "content": "    CSV_INLINE csv::string_view CSVRow::get_field(size_t index) const\n    {\n        using internals::ParseFlags;\n\n        if (index >= this->size())\n            throw std::runtime_error(\"Index out of bounds.\");\n\n        const size_t field_index = this->fields_start + index;\n        auto& field = this->data->fields[field_index];\n        auto field_str = csv::string_view(this->data->data).substr(this->data_start + field.start);\n\n        if (field.has_double_quote) {\n            auto& value = this->data->double_quote_fields[field_index];\n            if (value.empty()) {\n                bool prev_ch_quote = false;\n                for (size_t i = 0; i < field.length; i++) {\n                    if (this->data->parse_flags[field_str[i] + 128] == ParseFlags::QUOTE) {\n                        if (prev_ch_quote) {\n                            prev_ch_quote = false;\n                            continue;\n                        }\n                        else {\n                            prev_ch_quote = true;\n                        }\n                    }\n\n                    value += field_str[i];\n                }\n            }\n\n            return csv::string_view(value);\n        }\n\n        return field_str.substr(0, field.length);\n    }",
+      "construct_id": "796dd5ba-2987-49c8-b5f7-38c5d68ea4f0",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.668637",
+        "updated_at": "2025-03-14T18:27:35.668647",
+        "language": "cpp",
+        "file": "include/internal/csv_row.cpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 65,
+          "end": 99
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 2",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "9ce0611a-edff-4727-aa51-cb72992b0f05",
+      "content": "        /** @return The number of characters parsed that belong to complete rows */\n        CSV_INLINE size_t IBasicCSVParser::parse()\n        {\n            using internals::ParseFlags;\n\n            this->quote_escape = false;\n            this->data_pos = 0;\n            this->current_row_start() = 0;\n            this->trim_utf8_bom();\n\n            auto& in = this->data_ptr->data;\n            while (this->data_pos < in.size()) {\n                switch (compound_parse_flag(in[this->data_pos])) {\n                case ParseFlags::DELIMITER:\n                    this->push_field();\n                    this->data_pos++;\n                    break;\n\n                case ParseFlags::NEWLINE:\n                    this->data_pos++;\n\n                    // Catches CRLF (or LFLF, CRCRLF, or any other non-sensical combination of newlines)\n                    while (this->data_pos < in.size() && parse_flag(in[this->data_pos]) == ParseFlags::NEWLINE)\n                        this->data_pos++;\n\n                    // End of record -> Write record\n                    this->push_field();\n                    this->push_row();\n\n                    // Reset\n                    this->current_row = CSVRow(data_ptr, this->data_pos, fields->size());\n                    break;\n\n                case ParseFlags::NOT_SPECIAL:\n                    this->parse_field();\n                    break;\n\n                case ParseFlags::QUOTE_ESCAPE_QUOTE:\n                    if (data_pos + 1 == in.size()) return this->current_row_start();\n                    else if (data_pos + 1 < in.size()) {\n                        auto next_ch = parse_flag(in[data_pos + 1]);\n                        if (next_ch >= ParseFlags::DELIMITER) {\n                            quote_escape = false;\n                            data_pos++;\n                            break;\n                        }\n                        else if (next_ch == ParseFlags::QUOTE) {\n                            // Case: Escaped quote\n                            data_pos += 2;\n                            this->field_length += 2;\n                            this->field_has_double_quote = true;\n                            break;\n                        }\n                    }\n                    \n                    // Case: Unescaped single quote => not strictly valid but we'll keep it\n                    this->field_length++;\n                    data_pos++;\n\n                    break;\n\n                default: // Quote (currently not quote escaped)\n                    if (this->field_length == 0) {\n                        quote_escape = true;\n                        data_pos++;\n                        if (field_start == UNINITIALIZED_FIELD && data_pos < in.size() && !ws_flag(in[data_pos]))\n                            field_start = (int)(data_pos - current_row_start());\n                        break;\n                    }\n\n                    // Case: Unescaped quote\n                    this->field_length++;\n                    data_pos++;\n\n                    break;\n                }\n            }\n\n            return this->current_row_start();\n        }",
+      "construct_id": "9964404b-c21e-4894-85c5-5c621ee4e13a",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.670406",
+        "updated_at": "2025-03-14T18:27:35.670416",
+        "language": "cpp",
+        "file": "include/internal/basic_csv_parser.cpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 121,
+          "end": 200
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 3"
+        ]
+      }
+    },
+    {
+      "id": "7cbe7613-dd9f-4e4f-a57d-7e9c008156c5",
+      "content": "        /** Distinguishes numeric from other text values. Used by various\n         *  type casting functions, like csv_parser::CSVReader::read_row()\n         *\n         *  #### Rules\n         *   - Leading and trailing whitespace (\"padding\") ignored\n         *   - A string of just whitespace is NULL\n         *\n         *  @param[in]  in  String value to be examined\n         *  @param[out] out Pointer to long double where results of numeric parsing\n         *                  get stored\n         *  @param[in]  decimalSymbol  the character separating integral and decimal part,\n         *                             defaults to '.' if omitted\n         */\n        CONSTEXPR_14\n        DataType data_type(csv::string_view in, long double* const out, const char decimalSymbol) {\n            // Empty string --> NULL\n            if (in.size() == 0)\n                return DataType::CSV_NULL;\n\n            bool ws_allowed = true,\n                dot_allowed = true,\n                digit_allowed = true,\n                is_negative = false,\n                has_digit = false,\n                prob_float = false;\n\n            unsigned places_after_decimal = 0;\n            long double integral_part = 0,\n                decimal_part = 0;\n\n            for (size_t i = 0, ilen = in.size(); i < ilen; i++) {\n                const char& current = in[i];\n\n                switch (current) {\n                case ' ':\n                    if (!ws_allowed) {\n                        if (isdigit(in[i - 1])) {\n                            digit_allowed = false;\n                            ws_allowed = true;\n                        }\n                        else {\n                            // Ex: '510 123 4567'\n                            return DataType::CSV_STRING;\n                        }\n                    }\n                    break;\n                case '+':\n                    if (!ws_allowed) {\n                        return DataType::CSV_STRING;\n                    }\n\n                    break;\n                case '-':\n                    if (!ws_allowed) {\n                        // Ex: '510-123-4567'\n                        return DataType::CSV_STRING;\n                    }\n\n                    is_negative = true;\n                    break;\n                // case decimalSymbol: not allowed because decimalSymbol is not a literal,\n                // it is handled in the default block\n                case 'e':\n                case 'E':\n                    // Process scientific notation\n                    if (prob_float || (i && i + 1 < ilen && isdigit(in[i - 1]))) {\n                        size_t exponent_start_idx = i + 1;\n                        prob_float = true;\n\n                        // Strip out plus sign\n                        if (in[i + 1] == '+') {\n                            exponent_start_idx++;\n                        }\n\n                        return _process_potential_exponential(\n                            in.substr(exponent_start_idx),\n                            is_negative ? -(integral_part + decimal_part) : integral_part + decimal_part,\n                            out\n                        );\n                    }\n\n                    return DataType::CSV_STRING;\n                    break;\n                default:\n                    short digit = static_cast<short>(current - '0');\n                    if (digit >= 0 && digit <= 9) {\n                        // Process digit\n                        has_digit = true;\n\n                        if (!digit_allowed)\n                            return DataType::CSV_STRING;\n                        else if (ws_allowed) // Ex: '510 456'\n                            ws_allowed = false;\n\n                        // Build current number\n                        if (prob_float)\n                            decimal_part += digit / pow10(++places_after_decimal);\n                        else\n                            integral_part = (integral_part * 10) + digit;\n                    }\n                    // case decimalSymbol: not allowed because decimalSymbol is not a literal. \n                    else if (dot_allowed && current == decimalSymbol) {\n                        dot_allowed = false;\n                        prob_float = true;\n                    }\n                    else {\n                        return DataType::CSV_STRING;\n                    }\n                }\n            }\n\n            // No non-numeric/non-whitespace characters found\n            if (has_digit) {\n                long double number = integral_part + decimal_part;\n                if (out) {\n                    *out = is_negative ? -number : number;\n                }\n\n                return prob_float ? DataType::CSV_DOUBLE : _determine_integral_type(number);\n            }\n\n            // Just whitespace\n            return DataType::CSV_NULL;\n        }",
+      "construct_id": "9a31f19f-4c7f-4d20-8a0a-0513a7ac6270",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.672710",
+        "updated_at": "2025-03-14T18:27:35.672719",
+        "language": "cpp",
+        "file": "include/internal/data_type.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 228,
+          "end": 351
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 4",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "613047fd-fafc-4f5b-ac6c-3c721a764e21",
+      "content": "    CSV_INLINE CSVRow::iterator CSVRow::iterator::operator++(int) {\n        // Post-increment operator\n        auto temp = *this;\n        this->operator++();\n        return temp;\n    }",
+      "construct_id": "2c19da01-8af5-4361-bee6-1f9d607bfa4c",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.673406",
+        "updated_at": "2025-03-14T18:27:35.673417",
+        "language": "cpp",
+        "file": "include/internal/csv_row.cpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 242,
+          "end": 247
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 5"
+        ]
+      }
+    },
+    {
+      "id": "e97bed1e-9d4c-4a7e-999a-38b8f6b83d41",
+      "content": "        CSV_INLINE void CSVFieldList::allocate() {\n            buffers.push_back(std::unique_ptr<RawCSVField[]>(new RawCSVField[_single_buffer_capacity]));\n\n            _current_buffer_size = 0;\n            _back = buffers.back().get();\n        }",
+      "construct_id": "7055c808-ee07-4e69-8ec3-3764c19a175d",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.674149",
+        "updated_at": "2025-03-14T18:27:35.674159",
+        "language": "cpp",
+        "file": "include/internal/csv_row.cpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 17,
+          "end": 22
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 6"
+        ]
+      }
+    },
+    {
+      "id": "05bc60d9-cb8c-478d-9353-1d075b3a9d50",
+      "content": "        /** Given the absolute value of an integer, determine what numeric type\n         *  it fits in\n         */\n        HEDLEY_PRIVATE HEDLEY_PURE CONSTEXPR_14\n        DataType _determine_integral_type(const long double& number) noexcept {\n            // We can assume number is always non-negative\n            assert(number >= 0);\n\n            if (number <= internals::CSV_INT8_MAX)\n                return DataType::CSV_INT8;\n            else if (number <= internals::CSV_INT16_MAX)\n                return DataType::CSV_INT16;\n            else if (number <= internals::CSV_INT32_MAX)\n                return DataType::CSV_INT32;\n            else if (number <= internals::CSV_INT64_MAX)\n                return DataType::CSV_INT64;\n            else // Conversion to long long will cause an overflow\n                return DataType::CSV_BIGINT;\n        }",
+      "construct_id": "f0b4322b-e5f5-41dc-8f43-a0578c56d91f",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.674980",
+        "updated_at": "2025-03-14T18:27:35.674989",
+        "language": "cpp",
+        "file": "include/internal/data_type.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 208,
+          "end": 226
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 7"
+        ]
+      }
+    },
+    {
+      "id": "2e355ef7-c855-440a-ac61-6959f7045098",
+      "content": "            /** Wait for an item to become available */\n            void wait() {\n                if (!is_waitable()) {\n                    return;\n                }\n\n                std::unique_lock<std::mutex> lock{ this->_lock };\n                this->_cond.wait(lock, [this] { return this->size() >= _notify_size || !this->is_waitable(); });\n                lock.unlock();\n            }",
+      "construct_id": "dc805134-03cb-43cf-b2fd-6f8b41e2f364",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.675706",
+        "updated_at": "2025-03-14T18:27:35.675715",
+        "language": "cpp",
+        "file": "include/internal/basic_csv_parser.hpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 141,
+          "end": 150
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 8",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "a478f653-7f50-47e5-a06a-a1013c6986e1",
+      "content": "        CSV_INLINE void IBasicCSVParser::parse_field() noexcept {\n            using internals::ParseFlags;\n            auto& in = this->data_ptr->data;\n\n            // Trim off leading whitespace\n            while (data_pos < in.size() && ws_flag(in[data_pos]))\n                data_pos++;\n\n            if (field_start == UNINITIALIZED_FIELD)\n                field_start = (int)(data_pos - current_row_start());\n\n            // Optimization: Since NOT_SPECIAL characters tend to occur in contiguous\n            // sequences, use the loop below to avoid having to go through the outer\n            // switch statement as much as possible\n            while (data_pos < in.size() && compound_parse_flag(in[data_pos]) == ParseFlags::NOT_SPECIAL)\n                data_pos++;\n\n            field_length = data_pos - (field_start + current_row_start());\n\n            // Trim off trailing whitespace, this->field_length constraint matters\n            // when field is entirely whitespace\n            for (size_t j = data_pos - 1; ws_flag(in[j]) && this->field_length > 0; j--)\n                this->field_length--;\n        }",
+      "construct_id": "b6ed36ec-768a-4fe4-8a42-30391312a96b",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.676648",
+        "updated_at": "2025-03-14T18:27:35.676657",
+        "language": "cpp",
+        "file": "include/internal/basic_csv_parser.cpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 70,
+          "end": 93
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 9"
+        ]
+      }
+    },
+    {
+      "id": "d1077740-89e4-4d3b-a687-0fcccc109a9e",
+      "content": "        CSV_INLINE void IBasicCSVParser::reset_data_ptr() {\n            this->data_ptr = std::make_shared<RawCSVData>();\n            this->data_ptr->parse_flags = this->_parse_flags;\n            this->data_ptr->col_names = this->_col_names;\n            this->fields = &(this->data_ptr->fields);\n        }",
+      "construct_id": "070ce1e0-56b3-494a-a101-ab1d50adc7fe",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-14T18:27:35.677275",
+        "updated_at": "2025-03-14T18:27:35.677284",
+        "language": "cpp",
+        "file": "include/internal/basic_csv_parser.cpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "ai_run_id": null,
+        "rerank_ids": null,
+        "contexts": null,
+        "line_numbers": {
+          "start": 207,
+          "end": 212
+        },
+        "tokens": null,
+        "extraction_id": null,
+        "construct_tags": [
+          "RANK 10",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    }
+  ]
+}
