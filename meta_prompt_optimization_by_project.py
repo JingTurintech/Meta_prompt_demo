@@ -141,10 +141,10 @@ class LLMJudge:
             task_considerations=OPTIMIZATION_TASKS[self.task_name]["considerations"]
         )
         
-        request = LLMInferenceRequest(
+    request = LLMInferenceRequest(
             model_type=self.llm_type,
-            messages=[LLMConversationMessage(role=LLMRole.USER, content=prompt)]
-        )
+        messages=[LLMConversationMessage(role=LLMRole.USER, content=prompt)]
+    )
 
         try:
             response = await self.vision_client.ask(request)
@@ -242,14 +242,14 @@ class MetaPromptOptimizer:
     def get_project_specs(self) -> List[Dict[str, Any]]:
         """Get all original specs from the project"""
         logger.info(f"Getting specs for project {self.project_id}")
-        constructs = self.falcon_client.get_constructs_info(self.project_id)
-        logger.info(f"Found {len(constructs)} constructs")
-        
+            constructs = self.falcon_client.get_constructs_info(self.project_id)
+            logger.info(f"Found {len(constructs)} constructs")
+            
         specs = []
-        for construct_id, construct in constructs.items():
-            logger.info(f"Processing construct {construct_id}")
-            if hasattr(construct, 'custom_specs'):
-                for spec in construct.custom_specs:
+            for construct_id, construct in constructs.items():
+                logger.info(f"Processing construct {construct_id}")
+                if hasattr(construct, 'custom_specs'):
+                    for spec in construct.custom_specs:
                     # Only get original specs (those without source_ids)
                     if not hasattr(spec, 'source_ids') or not spec.source_ids:
                         try:
@@ -497,7 +497,7 @@ class MetaPromptOptimizer:
             if baseline_code is None and generated_code is None:
                 logger.error(f"Both baseline and meta-prompt optimizations failed for spec {spec_id}")
                 # Add result with default ratings and error messages
-                results.append({
+                    results.append({
                     'spec_id': spec_id,
                     'original_rating': 1500.0,  # Default rating
                     'baseline_rating': 1500.0,

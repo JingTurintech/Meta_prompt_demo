@@ -47,7 +47,7 @@ OPTIMIZATION_TASKS = {
     "runtime_performance": {
         "description": "Optimize code for better runtime performance while maintaining functionality",
         "objective": "improving runtime performance",
-        "default_prompt": "Analyze the following code and suggest optimizations to improve its runtime performance. Focus on algorithmic improvements, data structure choices, and computational efficiency.",
+        "default_prompt": "Improve the performance of the provided code. Try to find ways to reduce runtime, while keeping the main functionality of the code unchanged.",
         "instruction": "Generate an optimized version of the code that improves runtime performance while maintaining the same functionality.",
         "data_format": "\n\nOriginal Code:\n{}\n",
         "considerations": """1. Algorithmic complexity (Big O notation)
@@ -61,7 +61,7 @@ OPTIMIZATION_TASKS = {
     "memory_usage": {
         "description": "Optimize code for reduced memory consumption",
         "objective": "reducing memory usage",
-        "default_prompt": "Analyze the following code and suggest optimizations to reduce memory usage. Focus on efficient data structures, memory leaks, and resource management.",
+        "default_prompt": "Improve the performance of the provided code. Try to find ways to reduce memory usage, while keeping the main functionality of the code unchanged.",
         "instruction": "Generate an optimized version of the code that reduces memory consumption while maintaining the same functionality.",
         "data_format": "\n\nOriginal Code:\n{}\n",
         "considerations": """1. Memory allocation and deallocation patterns
@@ -89,16 +89,16 @@ Primary Languages: {project_languages}
 ## Current Prompt
 {current_prompt}
 
-## Target LLM Information
-Target LLM: {target_llm}
+## Target LLM
+{target_llm}
 
 ## Instructions
 1. Analyze the current prompt, project context, and task context
 2. Consider the target LLM's capabilities and limitations
-3. Generate an improved prompt that will help the LLM better optimize code for {objective}
-4. The prompt should be specific, clear, and focused on {objective}
-5. Consider the project's primary languages and context when generating the prompt
-6. Your response should contain only the improved prompt text, without any placeholders, formatting instructions, or additional text.
+3. Generate an improved prompt that will instruct the LLM to optimize code for {objective}
+4. The prompt should be specific, clear, and focused on {objective} 
+5. Your response should contain only the improved prompt text, without any placeholders, formatting instructions, or additional text.
+6. The generated prompt should also not contain any additional text like placeholders or formatting instructions, and should not ask the LLM to explain the optimization.
 """
 
 JUDGE_PROMPT_TEMPLATE = """You are an expert in code optimization and performance analysis. Compare the following two code snippets and determine which one would be better for {objective}.
@@ -219,7 +219,9 @@ class MetaPromptOptimizer:
                  llm_type: LLMType,
                  judge_llm_type: Optional[LLMType] = None,
                  current_prompt: Optional[str] = None,
-                 custom_task_description: Optional[str] = None):
+                 custom_task_description: Optional[str] = None,
+                 custom_meta_prompt: Optional[str] = None,
+                 progress_callback: Optional[callable] = None):
         self.project_id = project_id
         self.task_name = task_name
         self.llm_type = llm_type
@@ -227,14 +229,22 @@ class MetaPromptOptimizer:
         self.task = OPTIMIZATION_TASKS[task_name]
         self.current_prompt = current_prompt or self.task["default_prompt"]
         self.custom_task_description = custom_task_description
+        self.custom_meta_prompt = custom_meta_prompt
+        self.progress_callback = progress_callback
         self.vision_async_client = None
         self.falcon_client = None
         self.llm_judge = None
         self.rating_system = CodeRatingSystem()
         self.project_info = None
+        self.filled_meta_prompt = None
+        self.detected_language = "unknown"
+        self.project_files = []
 
     async def setup_clients(self):
         """Initialize API clients"""
+        if self.progress_callback:
+            self.progress_callback({"status": "setup", "message": "Setting up API clients..."})
+            
         # Setup Vision client
         vision_settings = VisionSettings.with_env_prefix("vision", _env_file=".env")
         thanos_settings = ThanosSettings.with_env_prefix("thanos", _env_file=".env")
@@ -249,31 +259,52 @@ class MetaPromptOptimizer:
         
         # Get project information
         try:
-            logger.info(f"Fetching project information for ID: {self.project_id}")
+            logger.info(f"Attempting to fetch project information for ID: {self.project_id}")
+            if self.progress_callback:
+                self.progress_callback({"status": "setup", "message": "Fetching project information..."})
+                
             self.project_info = self.falcon_client.get_project(self.project_id)
             logger.info(f"Raw project info response: {self.project_info}")
             
-            # Log all available attributes
-            logger.info("Project info attributes:")
-            for attr in dir(self.project_info):
-                if not attr.startswith('_'):  # Skip private attributes
-                    value = getattr(self.project_info, attr, None)
-                    logger.info(f"  {attr}: {value}")
+            # Get construct details for language detection
+            construct_details = self.falcon_client.get_constructs_info(self.project_id)
             
-            # Specifically log the languages attribute
-            if hasattr(self.project_info, 'languages'):
-                logger.info(f"Languages attribute exists: {self.project_info.languages}")
-                logger.info(f"Languages type: {type(self.project_info.languages)}")
+            # Initialize language info
+            self.detected_language = "unknown"
+            self.project_files = []
+            
+            if construct_details:
+                # Get the first construct's details to determine language
+                first_construct = next(iter(construct_details.values()))
+                self.detected_language = first_construct.language if hasattr(first_construct, 'language') else "unknown"
+                
+                # Collect files from constructs
+                for construct in construct_details.values():
+                    if hasattr(construct, 'file') and construct.file:
+                        self.project_files.append(construct.file)
+                
+                logger.info(f"Detected language: {self.detected_language}")
+                logger.info(f"Project files: {self.project_files}")
             else:
-                logger.info("No languages attribute found in project info")
+                logger.warning("No construct details available for language detection")
             
             logger.info(f"Successfully retrieved project information for {self.project_id}")
+            
+            if self.progress_callback:
+                self.progress_callback({
+                    "status": "setup_complete",
+                    "project_info": {
+                        "name": getattr(self.project_info, 'name', 'Unknown'),
+                        "description": getattr(self.project_info, 'description', 'No description available'),
+                        "language": self.detected_language,
+                        "files": self.project_files
+                    }
+                })
+                
         except Exception as e:
-            logger.error(f"Error getting project information: {str(e)}")
-            logger.error(f"Exception type: {type(e)}")
-            import traceback
-            logger.error(f"Traceback:\n{traceback.format_exc()}")
-            self.project_info = None
+            if self.progress_callback:
+                self.progress_callback({"status": "error", "message": str(e)})
+            raise
 
     def get_project_specs(self) -> List[Dict[str, Any]]:
         """Get all original specs from the project"""
@@ -308,18 +339,28 @@ class MetaPromptOptimizer:
     
     async def generate_optimization_prompt(self) -> str:
         """Generate an optimized prompt using meta-prompting"""
+        if self.progress_callback:
+            self.progress_callback({"status": "generating_meta_prompt", "message": "Generating meta-prompt..."})
+            
         # Get project information for the template
         project_name = "Unknown Project"
         project_description = "No description available"
-        project_languages = "Unknown"
+        project_languages = self.detected_language
         
         if self.project_info:
             project_name = getattr(self.project_info, 'name', project_name)
             project_description = getattr(self.project_info, 'description', project_description)
-            if hasattr(self.project_info, 'languages'):
-                project_languages = ", ".join(self.project_info.languages) if self.project_info.languages else project_languages
         
-        meta_prompt = META_PROMPT_TEMPLATE.format(
+        logger.info(f"Using project info for meta-prompt:")
+        logger.info(f"  Name: {project_name}")
+        logger.info(f"  Description: {project_description}")
+        logger.info(f"  Language: {project_languages}")
+        
+        # Use custom meta-prompt template if provided, otherwise use default
+        meta_prompt_template = self.custom_meta_prompt or META_PROMPT_TEMPLATE
+        
+        # Store the filled meta-prompt for later use
+        self.filled_meta_prompt = meta_prompt_template.format(
             objective=self.task["objective"],
             task_description=self.custom_task_description or self.task["description"],
             current_prompt=self.current_prompt,
@@ -329,197 +370,222 @@ class MetaPromptOptimizer:
             project_languages=project_languages
         )
         
+        # After filled_meta_prompt is set
+        if self.progress_callback:
+            self.progress_callback({
+                "status": "meta_prompt_ready",
+                "filled_meta_prompt": self.filled_meta_prompt
+            })
+        
         logger.info("Generating optimization prompt")
+        if self.progress_callback:
+            self.progress_callback({"status": "generating_prompt", "message": "Generating optimization prompt..."})
+            
         request = LLMInferenceRequest(
             model_type=self.llm_type,
-            messages=[LLMConversationMessage(role=LLMRole.USER, content=meta_prompt)]
+            messages=[LLMConversationMessage(role=LLMRole.USER, content=self.filled_meta_prompt)]
         )
         
         try:
             response = await self.vision_async_client.ask(request)
             generated_prompt = response.messages[1].content.strip()
             logger.info(f"Generated prompt: {generated_prompt}")
+            
+            if self.progress_callback:
+                self.progress_callback({
+                    "status": "prompt_ready",
+                    "generated_prompt": generated_prompt
+                })
+                
             return generated_prompt
         except Exception as e:
-            logger.error(f"Error generating prompt: {e}")
+            if self.progress_callback:
+                self.progress_callback({"status": "error", "message": str(e)})
             return self.current_prompt
             
-    async def optimize_code(self, spec: Dict[str, Any], prompt: str) -> Optional[str]:
-        """Generate optimized code using the given prompt"""
-        try:
-            # Get initial list of spec IDs
-            initial_constructs = self.falcon_client.get_constructs_info(self.project_id)
-            initial_spec_ids = set()
-            for construct in initial_constructs.values():
-                if hasattr(construct, 'custom_specs'):
-                    for spec_obj in construct.custom_specs:
-                        initial_spec_ids.add(str(spec_obj.id))
-            logger.info(f"Initial spec IDs: {initial_spec_ids}")
+    async def optimize_code(self, spec: Dict[str, Any], prompt: str, max_retries: int = 2) -> Optional[str]:
+        """
+        Generate optimized code using the given prompt.
+        Will retry failed optimizations up to max_retries times.
+        Returns None if all retries fail.
+        """
+        if self.progress_callback:
+            self.progress_callback({
+                "status": "optimizing_code",
+                "message": f"Optimizing code for spec {spec['id']}..."
+            })
+        
+        for attempt in range(max_retries):
+            try:
+                # Get initial list of spec IDs
+                initial_constructs = self.falcon_client.get_constructs_info(self.project_id)
+                initial_spec_ids = set()
+                for construct in initial_constructs.values():
+                    if hasattr(construct, 'custom_specs'):
+                        for spec_obj in construct.custom_specs:
+                            initial_spec_ids.add(str(spec_obj.id))
+                logger.info(f"Initial spec IDs: {initial_spec_ids}")
 
-            # Create a unique prompt name using timestamp
-            prompt_name = f"optimization_prompt_{int(time.time())}"
-            
-            try:
-                # Add prompt to project
-                prompt_request = ProjectPromptRequest(
-                    name=prompt_name,
-                    body=prompt,  # Use the prompt directly without formatting
-                    task="code-generation"  # Use the correct task type that API accepts
-                )
-                prompt_response = self.falcon_client.add_prompt(prompt_request, self.project_id)
-                prompt_id = str(prompt_response.id)
-                logger.info(f"Successfully created prompt with ID {prompt_id} for spec {spec['id']}")
-            except Exception as e:
-                logger.error(f"Error creating prompt for spec {spec['id']}: {str(e)}")
-                logger.error(f"Request details: name={prompt_name}, task=code-generation")
-                import traceback
-                logger.error(f"Traceback:\n{traceback.format_exc()}")
-                return None
-            
-            try:
-                # Create and execute recommendation request
-                request = CodeAIMultiOptimiseRequest(
-                    project_id=UUID(self.project_id),
-                    prompt_id=UUID(prompt_id),
-                    spec_ids=[UUID(spec['id'])],
-                    models=[self.llm_type.value],
-                    align=False,
-                    raw_output=True,
-                    method="zero_shot"
-                )
-                
-                # Execute recommendation task
-                response = self.falcon_client.execute_recommendation_task(request=request, create_process=True)
-                logger.info(f"Successfully created recommendation task for spec {spec['id']}")
+                # Create a unique prompt name using timestamp and attempt number
+                prompt_name = f"optimization_prompt_{int(time.time())}_{attempt}"
                 
                 try:
-                    # Extract the process ID from the response
-                    if not isinstance(response, dict) or 'content' not in response or 'item' not in response['content']:
-                        logger.error(f"Invalid response format for spec {spec['id']}. Response: {response}")
-                        return None
-                        
-                    process_id = response['content']['item']['processId']
-                    if not process_id:
-                        logger.error(f"No process_id in response for spec {spec['id']}. Response: {response}")
-                        return None
-                        
-                    logger.info(f"Waiting for process {process_id} to complete for spec {spec['id']}")
+                    # Add prompt to project
+                    prompt_request = ProjectPromptRequest(
+                        name=prompt_name,
+                        body=prompt,
+                        task="code-generation"
+                    )
+                    prompt_response = self.falcon_client.add_prompt(prompt_request, self.project_id)
+                    prompt_id = str(prompt_response.id)
+                    logger.info(f"Successfully created prompt with ID {prompt_id} for spec {spec['id']} (Attempt {attempt + 1})")
+                except Exception as e:
+                    logger.error(f"Error creating prompt for spec {spec['id']} (Attempt {attempt + 1}): {str(e)}")
+                    continue
+                
+                try:
+                    # Create and execute recommendation request
+                    request = CodeAIMultiOptimiseRequest(
+                        project_id=UUID(self.project_id),
+                        prompt_id=UUID(prompt_id),
+                        spec_ids=[UUID(spec['id'])],
+                        models=[self.llm_type.value],
+                        align=False,
+                        raw_output=True,
+                        method="zero_shot"
+                    )
                     
-                    # Add timeout handling
-                    start_time = time.time()
-                    timeout = 60  # 1 minute timeout
-                    last_status = None
+                    # Execute recommendation task
+                    response = self.falcon_client.execute_recommendation_task(request=request, create_process=True)
+                    logger.info(f"Successfully created recommendation task for spec {spec['id']} (Attempt {attempt + 1})")
                     
-                    while True:
-                        if time.time() - start_time > timeout:
-                            logger.error(f"Process {process_id} timed out after {timeout} seconds")
-                            return None
+                    try:
+                        # Extract the process ID from the response
+                        if not isinstance(response, dict) or 'content' not in response or 'item' not in response['content']:
+                            logger.error(f"Invalid response format for spec {spec['id']} (Attempt {attempt + 1})")
+                            continue
                             
-                        process_status = self.falcon_client.get_process(UUID(process_id))
-                        current_status = process_status.status
+                        process_id = response['content']['item']['processId']
+                        if not process_id:
+                            logger.error(f"No process_id in response for spec {spec['id']} (Attempt {attempt + 1})")
+                            continue
+                            
+                        logger.info(f"Waiting for process {process_id} to complete for spec {spec['id']} (Attempt {attempt + 1})")
                         
-                        # Only log status changes to avoid spam
-                        if current_status != last_status:
-                            if current_status in ['completed', 'success']:  # Handle both completed and success states
-                                logger.info(f"Process {process_id} completed successfully")
-                                # Add longer delay to allow the spec to be ready
-                                await asyncio.sleep(10)  # Increased from 5 to 10 seconds
-                                
-                                try:
-                                    # Get updated list of spec IDs
-                                    updated_constructs = self.falcon_client.get_constructs_info(self.project_id)
-                                    updated_spec_ids = set()
-                                    for construct in updated_constructs.values():
-                                        if hasattr(construct, 'custom_specs'):
-                                            for spec_obj in construct.custom_specs:
-                                                updated_spec_ids.add(str(spec_obj.id))
-                                    
-                                    # Find new spec IDs
-                                    new_spec_ids = updated_spec_ids - initial_spec_ids
-                                    logger.info(f"New spec IDs found: {new_spec_ids}")
-                                    
-                                    if not new_spec_ids:
-                                        logger.error(f"No new specs found after optimization for spec {spec['id']}")
-                                        return None
-                                    
-                                    # Get the first new spec (there should typically be only one)
-                                    new_spec_id = list(new_spec_ids)[0]
-                                    logger.info(f"Using new spec ID {new_spec_id} for optimized code")
-                                    
-                                    # Get the optimized spec
-                                    optimized_spec = self.falcon_client.get_spec(
-                                        spec_id=str(new_spec_id),
-                                        sources="sources",
-                                        construct=False
-                                    )
-                                    
-                                    if optimized_spec and hasattr(optimized_spec, 'content'):
-                                        optimized_code = optimized_spec.content
-                                        if optimized_code:
-                                            # Log which prompt was used for this optimization
-                                            if prompt == self.current_prompt:
-                                                logger.info(f"Successfully retrieved baseline optimized code for spec {new_spec_id}")
-                                            else:
-                                                logger.info(f"Successfully retrieved meta-prompt optimized code for spec {new_spec_id}")
-                                            return optimized_code
-                                        else:
-                                            logger.error(f"Empty content in optimized spec {new_spec_id}")
-                                    else:
-                                        logger.error(f"Invalid spec response format or missing content for spec {new_spec_id}")
-                                except Exception as e:
-                                    logger.error(f"Error getting optimized spec: {str(e)}")
+                        # Add timeout handling
+                        start_time = time.time()
+                        timeout = 120  # 2 minute timeout (increased from 1 minute)
+                        last_status = None
+                        
+                        while True:
+                            if time.time() - start_time > timeout:
+                                logger.error(f"Process {process_id} timed out after {timeout} seconds (Attempt {attempt + 1})")
                                 break
                                 
-                            elif current_status in ['failed', 'cancelled', 'error']:
-                                logger.error(f"Process {process_id} failed with status: {current_status}")
-                                if hasattr(process_status, 'error'):
-                                    logger.error(f"Process error: {process_status.error}")
-                                return None
-                            elif current_status == 'pending':
-                                logger.info(f"Process {process_id} is pending...")
-                            elif current_status in ['created', 'running']:  # Handle both created and running states
-                                progress = getattr(process_status, 'progress', None)
-                                if progress is not None:
-                                    logger.info(f"Process {process_id} is {current_status}. Progress: {progress:.1%}")
-                                else:
-                                    logger.info(f"Process {process_id} is {current_status}")
-                            else:
-                                logger.warning(f"Process {process_id} has unknown status: {current_status}")
+                            process_status = self.falcon_client.get_process(UUID(process_id))
+                            current_status = process_status.status
                             
-                            last_status = current_status
+                            # Only log status changes to avoid spam
+                            if current_status != last_status:
+                                if current_status in ['completed', 'success']:
+                                    logger.info(f"Process {process_id} completed successfully (Attempt {attempt + 1})")
+                                    # Add longer delay to allow the spec to be ready
+                                    await asyncio.sleep(15)  # Increased from 10 to 15 seconds
+                                    
+                                    try:
+                                        # Get updated list of spec IDs
+                                        updated_constructs = self.falcon_client.get_constructs_info(self.project_id)
+                                        updated_spec_ids = set()
+                                        for construct in updated_constructs.values():
+                                            if hasattr(construct, 'custom_specs'):
+                                                for spec_obj in construct.custom_specs:
+                                                    updated_spec_ids.add(str(spec_obj.id))
+                                        
+                                        # Find new spec IDs
+                                        new_spec_ids = updated_spec_ids - initial_spec_ids
+                                        logger.info(f"New spec IDs found: {new_spec_ids}")
+                                        
+                                        if not new_spec_ids:
+                                            logger.error(f"No new specs found after optimization for spec {spec['id']} (Attempt {attempt + 1})")
+                                            # Don't break here, let it try again if retries remain
+                                            break
+                                        
+                                        # Get the first new spec
+                                        new_spec_id = list(new_spec_ids)[0]
+                                        logger.info(f"Using new spec ID {new_spec_id} for optimized code (Attempt {attempt + 1})")
+                                        
+                                        # Get the optimized spec
+                                        optimized_spec = self.falcon_client.get_spec(
+                                            spec_id=str(new_spec_id),
+                                            sources="sources",
+                                            construct=False
+                                        )
+                                        
+                                        if optimized_spec and hasattr(optimized_spec, 'content'):
+                                            optimized_code = optimized_spec.content
+                                            if optimized_code:
+                                                logger.info(f"Successfully retrieved optimized code for spec {new_spec_id} (Attempt {attempt + 1})")
+                                                return optimized_code
+                                        else:
+                                            logger.error(f"Invalid spec response format or missing content for spec {new_spec_id} (Attempt {attempt + 1})")
+                                    except Exception as e:
+                                        logger.error(f"Error getting optimized spec (Attempt {attempt + 1}): {str(e)}")
+                                    break
+                                    
+                                elif current_status in ['failed', 'cancelled', 'error']:
+                                    logger.error(f"Process {process_id} failed with status: {current_status} (Attempt {attempt + 1})")
+                                    if hasattr(process_status, 'error'):
+                                        logger.error(f"Process error: {process_status.error}")
+                                    break
+                                else:
+                                    if current_status == 'pending':
+                                        logger.info(f"Process {process_id} is pending... (Attempt {attempt + 1})")
+                                    elif current_status in ['created', 'running']:
+                                        progress = getattr(process_status, 'progress', None)
+                                        if progress is not None:
+                                            logger.info(f"Process {process_id} is {current_status}. Progress: {progress:.1%} (Attempt {attempt + 1})")
+                                        else:
+                                            logger.info(f"Process {process_id} is {current_status} (Attempt {attempt + 1})")
+                                    else:
+                                        logger.warning(f"Process {process_id} has unknown status: {current_status} (Attempt {attempt + 1})")
+                                
+                                last_status = current_status
+                            
+                            await asyncio.sleep(2)  # Check every 2 seconds
                         
-                        await asyncio.sleep(2)  # Check every 2 seconds
-                          
-                    return None
+                    except Exception as e:
+                        logger.error(f"Error processing recommendation result for spec {spec['id']} (Attempt {attempt + 1}): {str(e)}")
+                        continue
                     
                 except Exception as e:
-                    logger.error(f"Error processing recommendation result for spec {spec['id']}: {str(e)}")
-                    logger.error(f"Process details: process_id={response.get('process_id')}")
-                    import traceback
-                    logger.error(f"Traceback:\n{traceback.format_exc()}")
-                    return None
+                    logger.error(f"Error executing recommendation task for spec {spec['id']} (Attempt {attempt + 1}): {str(e)}")
+                    continue
                 
             except Exception as e:
-                logger.error(f"Error executing recommendation task for spec {spec['id']}: {str(e)}")
-                logger.error(f"Request details: project_id={self.project_id}, prompt_id={prompt_id}, spec_id={spec['id']}")
-                import traceback
-                logger.error(f"Traceback:\n{traceback.format_exc()}")
-                return None
+                logger.error(f"Unexpected error in optimize_code for spec {spec['id']} (Attempt {attempt + 1}): {str(e)}")
+                continue
             
-        except Exception as e:
-            logger.error(f"Unexpected error in optimize_code for spec {spec['id']}: {str(e)}")
-            import traceback
-            logger.error(f"Traceback:\n{traceback.format_exc()}")
-            return None
-            
+            # If we get here and haven't returned, this attempt failed
+            if attempt < max_retries - 1:
+                logger.warning(f"Optimization attempt {attempt + 1} failed for spec {spec['id']}, retrying...")
+                await asyncio.sleep(5)  # Wait 5 seconds before retrying
+            else:
+                logger.error(f"All {max_retries} optimization attempts failed for spec {spec['id']}, skipping...")
+        
+        return None
 
     async def run_optimization_workflow(self) -> Dict[str, Any]:
         """Run the complete optimization workflow"""
+        if self.progress_callback:
+            self.progress_callback({"status": "workflow_start", "message": "Starting optimization workflow..."})
+            
         await self.setup_clients()
         
         # Get original specs
         specs = self.get_project_specs()
         if not specs:
+            if self.progress_callback:
+                self.progress_callback({"status": "error", "message": "No specs found in project"})
             return {"error": "No specs found in project"}
             
         # Generate prompts
@@ -529,7 +595,16 @@ class MetaPromptOptimizer:
         contest_time = round(datetime.now(timezone.utc).timestamp())
         
         # Process each spec
-        for spec in specs:
+        total_specs = len(specs)
+        successful_specs = 0
+        for idx, spec in enumerate(specs, 1):
+            if self.progress_callback:
+                self.progress_callback({
+                    "status": "processing_spec",
+                    "message": f"Processing spec {idx}/{total_specs} (Successfully processed: {successful_specs})",
+                    "progress": idx / total_specs
+                })
+                
             logger.info(f"Processing spec {spec['id']}")
             
             # Generate optimized code using both prompts
@@ -538,26 +613,16 @@ class MetaPromptOptimizer:
             logger.info("Generating meta-prompt optimization...")
             generated_code = await self.optimize_code(spec, generated_prompt)
             
+            # Skip this spec if both optimizations failed
+            if baseline_code is None and generated_code is None:
+                logger.warning(f"Both baseline and meta-prompt optimizations failed for spec {spec['id']}, skipping evaluation...")
+                continue
+            
             # Create unique IDs for each code version
             spec_id = spec['id']
             original_id = f"{spec_id}_original"
             baseline_id = f"{spec_id}_baseline"
             generated_id = f"{spec_id}_generated"
-            
-            if baseline_code is None and generated_code is None:
-                logger.error(f"Both baseline and meta-prompt optimizations failed for spec {spec_id}")
-                # Add result with default ratings and error messages
-                results.append({
-                    'spec_id': spec_id,
-                    'original_rating': 1500.0,  # Default rating
-                    'baseline_rating': 1500.0,
-                    'generated_rating': 1500.0,
-                    'comparisons': [],
-                    'original_code': spec['content'],
-                    'baseline_code': "Failed to generate baseline optimization",
-                    'generated_code': "Failed to generate meta-prompt optimization"
-                })
-                continue
             
             # Run comparisons in both forward and reverse order
             comparison_orders = [
@@ -569,8 +634,8 @@ class MetaPromptOptimizer:
                 ],
                 # Reverse order - Still keeping Generated vs Baseline last
                 [
-                    (original_id, generated_id, spec['content'], generated_code),
                     (original_id, baseline_id, spec['content'], baseline_code),
+                    (original_id, generated_id, spec['content'], generated_code),
                     (baseline_id, generated_id, baseline_code, generated_code)
                 ]
             ]
@@ -595,6 +660,10 @@ class MetaPromptOptimizer:
                 ]
                 
                 for code_a_id, code_b_id, code_a, code_b in valid_comparisons:
+                    # Skip if either code is None
+                    if code_a is None or code_b is None:
+                        continue
+                        
                     # Get LLM judge's verdict
                     score = await self.llm_judge.compare_code(code_a, code_b)
                     logger.info(f"Order {order_idx + 1}, Comparison {code_a_id} vs {code_b_id}: {score}")
@@ -626,7 +695,7 @@ class MetaPromptOptimizer:
                 contest_time += 1000
             
             # Calculate final results for this spec
-            results.append({
+            result = {
                 'spec_id': spec_id,
                 'original_rating': np.mean(all_ratings['original']),
                 'baseline_rating': np.mean(all_ratings['baseline']),
@@ -647,38 +716,71 @@ class MetaPromptOptimizer:
                 'original_code': spec['content'],
                 'baseline_code': baseline_code if baseline_code else "Failed to generate baseline optimization",
                 'generated_code': generated_code if generated_code else "Failed to generate meta-prompt optimization"
-            })
+            }
+            results.append(result)
+            
+            # Send progress update with the spec result
+            if self.progress_callback:
+                self.progress_callback({"status": "spec_complete", "result": result})
+            
+            successful_specs += 1
         
         # Calculate average ratings across all specs
-        avg_ratings = {
-            'original': np.mean([r['original_rating'] for r in results]),
-            'baseline': np.mean([r['baseline_rating'] for r in results]),
-            'generated': np.mean([r['generated_rating'] for r in results])
-        }
-        
-        # Calculate average ratings by order
-        avg_ratings_by_order = {
-            'forward_order': {
-                'original': np.mean([r['ratings_by_order']['forward_order']['original'] for r in results]),
-                'baseline': np.mean([r['ratings_by_order']['forward_order']['baseline'] for r in results]),
-                'generated': np.mean([r['ratings_by_order']['forward_order']['generated'] for r in results])
-            },
-            'reverse_order': {
-                'original': np.mean([r['ratings_by_order']['reverse_order']['original'] for r in results]),
-                'baseline': np.mean([r['ratings_by_order']['reverse_order']['baseline'] for r in results]),
-                'generated': np.mean([r['ratings_by_order']['reverse_order']['generated'] for r in results])
+        if results:
+            avg_ratings = {
+                'original': np.mean([r['original_rating'] for r in results]),
+                'baseline': np.mean([r['baseline_rating'] for r in results]),
+                'generated': np.mean([r['generated_rating'] for r in results])
             }
-        }
+            
+            # Calculate average ratings by order
+            avg_ratings_by_order = {
+                'forward_order': {
+                    'original': np.mean([r['ratings_by_order']['forward_order']['original'] for r in results]),
+                    'baseline': np.mean([r['ratings_by_order']['forward_order']['baseline'] for r in results]),
+                    'generated': np.mean([r['ratings_by_order']['forward_order']['generated'] for r in results])
+                },
+                'reverse_order': {
+                    'original': np.mean([r['ratings_by_order']['reverse_order']['original'] for r in results]),
+                    'baseline': np.mean([r['ratings_by_order']['reverse_order']['baseline'] for r in results]),
+                    'generated': np.mean([r['ratings_by_order']['reverse_order']['generated'] for r in results])
+                }
+            }
+        else:
+            avg_ratings = {
+                'original': 1500.0,
+                'baseline': 1500.0,
+                'generated': 1500.0
+            }
+            avg_ratings_by_order = {
+                'forward_order': {'original': 1500.0, 'baseline': 1500.0, 'generated': 1500.0},
+                'reverse_order': {'original': 1500.0, 'baseline': 1500.0, 'generated': 1500.0}
+            }
         
-        return {
+        # Send final results
+        final_results = {
             'prompts': {
                 'baseline': self.current_prompt,
                 'generated': generated_prompt
             },
+            'meta_prompt_used': self.filled_meta_prompt,
             'results': results,
             'average_ratings': avg_ratings,
-            'average_ratings_by_order': avg_ratings_by_order
+            'average_ratings_by_order': avg_ratings_by_order,
+            'statistics': {
+                'total_specs': total_specs,
+                'successful_specs': successful_specs,
+                'failed_specs': total_specs - successful_specs
+            }
         }
+        
+        if self.progress_callback:
+            self.progress_callback({
+                "status": "complete",
+                "final_results": final_results
+            })
+            
+        return final_results
 
 async def main():
     # Example usage

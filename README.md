@@ -73,7 +73,7 @@ A comprehensive framework for meta-prompt optimization and evaluation using Stre
    FALCON_API_KEY=your_falcon_api_key
    VISION_API_KEY=your_vision_api_key
    THANOS_API_KEY=your_thanos_api_key
-   ```
+```
 
 ## Usage
 

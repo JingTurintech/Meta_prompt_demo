@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union
 import numpy as np
 from loguru import logger
 import sys
@@ -34,7 +34,7 @@ AVAILABLE_LLMS = [
 # Define optimization tasks
 OPTIMIZATION_TASKS = {
     "runtime_performance": {
-        "description": "Optimize code for better runtime performance while maintaining functionality",
+        "description": "Optimize code for better runtime performance",
         "objective": "improving runtime performance",
         "default_prompt": "Improve the performance of the provided code. Try to find ways to reduce runtime, while keeping the main functionality of the code unchanged.",
         "instruction": "Generate an optimized version of the code that improves runtime performance while maintaining the same functionality.",
@@ -63,9 +63,20 @@ OPTIMIZATION_TASKS = {
     }
 }
 
-# Define the meta-prompt template
-META_PROMPT_TEMPLATE = """
-You are an expert in code optimization. We need to generate a prompt that will help an LLM optimize code for {objective}.
+# Define meta-prompt templates
+META_PROMPT_TEMPLATES = {
+    "simplified": {
+        "name": "Simplified Template",
+        "description": "A concise, step-by-step template focusing on essential optimization goals",
+        "template": """You are an expert in code optimization. We need to generate a prompt that will help the LLM {target_llm} optimize code for {objective}. 
+        
+NOTE: Your response should contain only the prompt, without any placeholders for the code, formatting instructions, or additional text. The generated prompt should not contain any additional text like placeholders for the code or formatting instructions.
+"""
+    },
+    "standard": {
+        "name": "Standard Template",
+        "description": "A balanced template focusing on project context and optimization goals",
+        "template": """You are an expert in code optimization. Please generate a prompt that will instruct the target LLM {target_llm} to optimize code for {objective}. Consider the project context, task context, and adapt the prompt complexity and style based on the target LLM's capabilities.
 
 ## Project Context
 Project Name: {project_name}
@@ -73,22 +84,39 @@ Project Description: {project_description}
 Primary Languages: {project_languages}
 
 ## Task Context
-{task_description}
+- Description: {task_description}
 
-## Current Prompt
-{current_prompt}
+## Target LLM Context
+- Target Model: {target_llm}
+- For cost-efficient LLMs (e.g., gpt-4-o-mini, gemini-v15-flash, llama-3-1-8b): these models have limited internal chain-of-thought, so the generated prompt should give short, clear and succinct instructions, without internal reasoning.
+- For larger LLMs (e.g., gpt-4-o, claude-v35-sonnet, claude-v37-sonnet): The generated prompt should allow for more complex and extensive internal reasoning, and encourage internal verification of any assumptions related to metrics based on the task description. 
 
-## Target LLM
-{target_llm}
-
-## Instructions
-1. Analyze the current prompt, project context, and task context
-2. Consider the target LLM's capabilities and limitations
-3. Generate an improved prompt that will instruct the LLM to optimize code for {objective}
-4. The prompt should be specific, clear, and focused on {objective} 
-5. Your response should contain only the improved prompt text, without any placeholders, formatting instructions, or additional text.
-6. The generated prompt should also not contain any additional text like placeholders or formatting instructions, and should not ask the LLM to explain the optimization.
+NOTE: Your response should contain only the prompt, without any placeholders for the code, formatting instructions, or additional text. The generated prompt should not contain any additional text like placeholders for the code or formatting instructions.
 """
+    },
+    "enhanced": {
+        "name": "Enhanced Template",
+        "description": "A comprehensive template that includes detailed context about LLM capabilities and adapts the prompt accordingly",
+        "template": """You are an expert in code optimization. Please generate a prompt that will instruct the target LLM {target_llm} to optimize code for {objective}. Consider the project context, task context, and adapt the prompt complexity and style based on the target LLM's capabilities.
+
+## Project Context
+Project Name: {project_name}
+Project Description: {project_description}
+Primary Languages: {project_languages}
+
+## Task Context
+- Description: {task_description}
+- Considerations: {task_considerations}
+
+## Target LLM Context
+- Target Model: {target_llm}
+- For cost-efficient LLMs (e.g., gpt-4-o-mini, gemini-v15-flash, llama-3-1-8b): these models have limited internal chain-of-thought, so the generated prompt should give short, clear and succinct instructions, without internal reasoning.
+- For larger LLMs (e.g., gpt-4-o, claude-v35-sonnet, claude-v37-sonnet): The generated prompt should allow for more complex and extensive internal reasoning, and encourage internal verification of any assumptions related to metrics based on the task description. 
+
+NOTE: Your response should contain only the prompt, without any placeholders for the code, formatting instructions, or additional text. The generated prompt should not contain any additional text like placeholders for the code or formatting instructions.
+"""
+    }
+}
 
 JUDGE_PROMPT_TEMPLATE = """You are an expert in code optimization and performance analysis. Compare the following two code snippets and determine which one would be better for {objective}.
 
@@ -211,22 +239,26 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
                  task_name: str,
                  llm_type: LLMType,
                  judge_llm_type: Optional[LLMType] = None,
+                 synthesis_llm_type: Optional[LLMType] = None,
                  current_prompt: Optional[str] = None,
                  custom_task_description: Optional[str] = None,
                  custom_meta_prompt: Optional[str] = None,
+                 selected_templates: Optional[List[str]] = None,
                  progress_callback: Optional[callable] = None):
         self.task_name = task_name
         self.llm_type = llm_type
         self.judge_llm_type = judge_llm_type or LLMType("gpt-4-o")
+        self.synthesis_llm_type = synthesis_llm_type or LLMType("gpt-4-o")  # Default to gpt-4-o if not specified
         self.task = OPTIMIZATION_TASKS[task_name]
         self.current_prompt = current_prompt or self.task["default_prompt"]
         self.custom_task_description = custom_task_description
         self.custom_meta_prompt = custom_meta_prompt
+        self.selected_templates = selected_templates or ["standard"]  # Default to standard template if none selected
         self.progress_callback = progress_callback
         self.vision_async_client = None
         self.llm_judge = None
         self.rating_system = CodeRatingSystem()
-        self.filled_meta_prompt = None
+        self.filled_meta_prompts = {}  # Store filled meta-prompts for each template
 
     async def setup_clients(self):
         """Initialize API clients"""
@@ -242,56 +274,77 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
         if self.progress_callback:
             self.progress_callback({"status": "setup_complete"})
 
-    async def generate_optimization_prompt(self, project_info: Dict[str, Any]) -> str:
-        """Generate an optimized prompt using meta-prompting"""
+    async def generate_optimization_prompts(self, project_info: Dict[str, Any]) -> Dict[str, str]:
+        """Generate optimized prompts using selected meta-prompting templates"""
         if self.progress_callback:
-            self.progress_callback({"status": "generating_meta_prompt", "message": "Generating meta-prompt..."})
+            self.progress_callback({"status": "generating_meta_prompt", "message": "Generating meta-prompts..."})
             
-        # Use custom meta-prompt template if provided, otherwise use default
-        meta_prompt_template = self.custom_meta_prompt or META_PROMPT_TEMPLATE
+        generated_prompts = {}
         
-        # Store the filled meta-prompt for later use
-        self.filled_meta_prompt = meta_prompt_template.format(
-            objective=self.task["objective"],
-            task_description=self.custom_task_description or self.task["description"],
-            current_prompt=self.current_prompt,
-            target_llm=self.llm_type,
-            project_name=project_info.get("name", "Unknown"),
-            project_description=project_info.get("description", "No description available"),
-            project_languages=project_info.get("language", "unknown")
-        )
-        
-        if self.progress_callback:
-            self.progress_callback({
-                "status": "meta_prompt_ready",
-                "filled_meta_prompt": self.filled_meta_prompt
-            })
-        
-        logger.info("Generating optimization prompt")
-        if self.progress_callback:
-            self.progress_callback({"status": "generating_prompt", "message": "Generating optimization prompt..."})
+        for template_id in self.selected_templates:
+            if template_id not in META_PROMPT_TEMPLATES:
+                logger.warning(f"Template {template_id} not found, skipping...")
+                continue
+                
+            template = META_PROMPT_TEMPLATES[template_id]
             
-        request = LLMInferenceRequest(
-            model_type=self.llm_type,
-            messages=[LLMConversationMessage(role=LLMRole.USER, content=self.filled_meta_prompt)]
-        )
-        
-        try:
-            response = await self.vision_async_client.ask(request)
-            generated_prompt = response.messages[1].content.strip()
-            logger.info(f"Generated prompt: {generated_prompt}")
+            # Fill the meta-prompt template
+            filled_meta_prompt = template["template"].format(
+                objective=self.task["objective"],
+                task_description=self.custom_task_description or self.task["description"],
+                current_prompt=self.current_prompt,
+                target_llm=self.llm_type,
+                project_name=project_info.get("name", "Unknown"),
+                project_description=project_info.get("description", "No description available"),
+                project_languages=project_info.get("language", "unknown"),
+                task_considerations=OPTIMIZATION_TASKS[self.task_name]["considerations"]
+            )
+            
+            self.filled_meta_prompts[template_id] = filled_meta_prompt
             
             if self.progress_callback:
                 self.progress_callback({
-                    "status": "prompt_ready",
-                    "generated_prompt": generated_prompt
+                    "status": "meta_prompt_ready",
+                    "template_id": template_id,
+                    "template_name": template["name"],
+                    "filled_meta_prompt": filled_meta_prompt
+                })
+            
+            logger.info(f"Generating optimization prompt using template: {template['name']}")
+            if self.progress_callback:
+                self.progress_callback({
+                    "status": "generating_prompt",
+                    "message": f"Generating optimization prompt using {template['name']}..."
                 })
                 
-            return generated_prompt
-        except Exception as e:
-            if self.progress_callback:
-                self.progress_callback({"status": "error", "message": str(e)})
-            return self.current_prompt
+            request = LLMInferenceRequest(
+                model_type=self.synthesis_llm_type,  # Use synthesis LLM instead of optimization LLM
+                messages=[LLMConversationMessage(role=LLMRole.USER, content=filled_meta_prompt)]
+            )
+            
+            try:
+                response = await self.vision_async_client.ask(request)
+                generated_prompt = response.messages[1].content.strip()
+                generated_prompts[template_id] = generated_prompt
+                
+                if self.progress_callback:
+                    self.progress_callback({
+                        "status": "prompt_ready",
+                        "template_id": template_id,
+                        "template_name": template["name"],
+                        "generated_prompt": generated_prompt
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Error generating prompt for template {template_id}: {str(e)}")
+                if self.progress_callback:
+                    self.progress_callback({
+                        "status": "error",
+                        "message": f"Error generating prompt for {template['name']}: {str(e)}"
+                    })
+                generated_prompts[template_id] = self.current_prompt
+                
+        return generated_prompts
 
     async def optimize_code(self, code: str, prompt: str, max_retries: int = 2) -> Optional[str]:
         """Generate optimized code using the given prompt"""
@@ -335,19 +388,29 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
         
         return None
 
-    async def evaluate_benchmark(self, benchmark_file: str) -> Dict[str, Any]:
-        """Evaluate a benchmark file"""
+    async def evaluate_benchmark(self, benchmark_input: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """Evaluate a benchmark file or benchmark data dictionary
+        
+        Args:
+            benchmark_input: Either a path to a benchmark file or a benchmark data dictionary
+            
+        Returns:
+            Dict containing evaluation results
+        """
         try:
-            # Load benchmark data
-            with open(benchmark_file, 'r') as f:
-                benchmark_data = json.load(f)
+            # Load benchmark data if input is a file path
+            if isinstance(benchmark_input, str):
+                with open(benchmark_input, 'r') as f:
+                    benchmark_data = json.load(f)
+            else:
+                benchmark_data = benchmark_input
             
             # Setup clients
             await self.setup_clients()
             
-            # Generate prompts using project info
+            # Generate prompts using project info and selected templates
             project_info = benchmark_data["metadata"]["project_info"]
-            generated_prompt = await self.generate_optimization_prompt(project_info)
+            generated_prompts = await self.generate_optimization_prompts(project_info)
             
             results = []
             contest_time = round(datetime.now().timestamp())
@@ -367,167 +430,126 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
                 # Get snippet language from metadata
                 snippet_language = snippet.get("metadata", {}).get("language", project_info.get("language", "unknown"))
                 
-                # Generate optimized versions
+                # Generate optimized versions using each template
+                optimized_versions = {}
                 try:
+                    # First, generate baseline optimization
                     baseline_code = await self.optimize_code(snippet["content"], self.current_prompt)
-                    generated_code = await self.optimize_code(snippet["content"], generated_prompt)
+                    optimized_versions["baseline"] = baseline_code
+                    
+                    # Then generate optimizations for each template
+                    for template_id, prompt in generated_prompts.items():
+                        optimized_code = await self.optimize_code(snippet["content"], prompt)
+                        optimized_versions[template_id] = optimized_code
                 except Exception as e:
                     logger.error(f"Error optimizing snippet {snippet['id']}: {str(e)}")
                     continue
                 
-                # Skip if both optimizations failed
-                if baseline_code is None and generated_code is None:
-                    logger.warning(f"Both optimizations failed for snippet {snippet['id']}, skipping...")
+                # Skip if all optimizations failed
+                if all(code is None for code in optimized_versions.values()):
+                    logger.warning(f"All optimizations failed for snippet {snippet['id']}, skipping...")
                     continue
                 
                 # Create unique IDs for each code version
                 snippet_id = snippet["id"]
-                original_id = f"{snippet_id}_original"
-                baseline_id = f"{snippet_id}_baseline"
-                generated_id = f"{snippet_id}_generated"
-                
-                # Run comparisons in both orders
-                comparison_orders = [
-                    [
-                        (original_id, generated_id, snippet["content"], generated_code),
-                        (original_id, baseline_id, snippet["content"], baseline_code),
-                        (baseline_id, generated_id, baseline_code, generated_code)
-                    ],
-                    [
-                        (original_id, baseline_id, snippet["content"], baseline_code),
-                        (original_id, generated_id, snippet["content"], generated_code),
-                        (baseline_id, generated_id, baseline_code, generated_code)
-                    ]
-                ]
-                
-                all_comparison_results = []
-                all_ratings = {
-                    'original': [],
-                    'baseline': [],
-                    'generated': []
+                code_ids = {
+                    "original": f"{snippet_id}_original",
+                    "baseline": f"{snippet_id}_baseline",
+                    **{template_id: f"{snippet_id}_{template_id}" for template_id in generated_prompts.keys()}
                 }
                 
-                # Run each order
-                for order_idx, comparisons in enumerate(comparison_orders):
-                    # Reset rating system for each order
-                    self.rating_system = CodeRatingSystem()
-                    comparison_results = []
-                    
-                    # Only include comparisons where we have both codes
-                    valid_comparisons = [
-                        comp for comp in comparisons
-                        if (comp[2] is not None and comp[3] is not None)
-                    ]
-                    
-                    for code_a_id, code_b_id, code_a, code_b in valid_comparisons:
+                # Run all possible comparisons
+                all_versions = ["original"] + list(generated_prompts.keys()) + ["baseline"]  # Move baseline to end
+                comparison_results = []
+                
+                # Reset rating system for this snippet
+                self.rating_system = CodeRatingSystem()
+                
+                # Compare each version with every other version
+                for i, version1 in enumerate(all_versions):
+                    for version2 in all_versions[i+1:]:
+                        code1 = snippet["content"] if version1 == "original" else optimized_versions[version1]
+                        code2 = snippet["content"] if version2 == "original" else optimized_versions[version2]
+                        
                         # Skip if either code is None
-                        if code_a is None or code_b is None:
+                        if code1 is None or code2 is None:
                             continue
                             
                         # Get LLM judge's verdict
-                        score = await self.llm_judge.compare_code(code_a, code_b)
-                        logger.info(f"Order {order_idx + 1}, Comparison {code_a_id} vs {code_b_id}: {score}")
+                        score = await self.llm_judge.compare_code(code1, code2)
+                        logger.info(f"Comparison {version1} vs {version2}: {score}")
                         
                         # Update ELO ratings based on comparison
-                        if score == 1.0:  # code_a wins
-                            self.rating_system.update_ratings([(code_a_id, 0, 0), (code_b_id, 1, 1)], contest_time)
-                        elif score == 0.0:  # code_b wins
-                            self.rating_system.update_ratings([(code_b_id, 0, 0), (code_a_id, 1, 1)], contest_time)
+                        if score == 1.0:  # code1 wins
+                            self.rating_system.update_ratings([(code_ids[version1], 0, 0), (code_ids[version2], 1, 1)], contest_time)
+                        elif score == 0.0:  # code2 wins
+                            self.rating_system.update_ratings([(code_ids[version2], 0, 0), (code_ids[version1], 1, 1)], contest_time)
                         else:  # tie
-                            self.rating_system.update_ratings([(code_a_id, 0, 0), (code_b_id, 0, 0)], contest_time)
+                            self.rating_system.update_ratings([(code_ids[version1], 0, 0), (code_ids[version2], 0, 0)], contest_time)
                         
-                        # Format comparison result
-                        code_a_name = code_a_id.split('_')[-1]
-                        code_b_name = code_b_id.split('_')[-1]
                         comparison_results.append({
-                            'order': order_idx + 1,
-                            'comparison': f"{code_a_name} vs {code_b_name}",
+                            'comparison': f"{version1} vs {version2}",
                             'score': score
                         })
-                    
-                    # Store ratings for this order
-                    all_ratings['original'].append(self.rating_system.get_rating(original_id))
-                    all_ratings['baseline'].append(self.rating_system.get_rating(baseline_id))
-                    all_ratings['generated'].append(self.rating_system.get_rating(generated_id))
-                    all_comparison_results.extend(comparison_results)
-                    
-                    # Update contest time for next iteration
-                    contest_time += 1000
+                        
+                        contest_time += 1
                 
-                # Calculate final results for this snippet
+                # Get final ratings for all versions
+                final_ratings = {
+                    version: self.rating_system.get_rating(code_ids[version])
+                    for version in all_versions
+                }
+                
+                # Prepare result for this snippet
                 result = {
                     'snippet_id': snippet_id,
-                    'original_rating': np.mean(all_ratings['original']),
-                    'baseline_rating': np.mean(all_ratings['baseline']),
-                    'generated_rating': np.mean(all_ratings['generated']),
-                    'ratings_by_order': {
-                        'forward_order': {
-                            'original': all_ratings['original'][0],
-                            'baseline': all_ratings['baseline'][0],
-                            'generated': all_ratings['generated'][0]
-                        },
-                        'reverse_order': {
-                            'original': all_ratings['original'][1],
-                            'baseline': all_ratings['baseline'][1],
-                            'generated': all_ratings['generated'][1]
-                        }
-                    },
-                    'comparisons': all_comparison_results,
+                    'ratings': final_ratings,
+                    'comparisons': comparison_results,
                     'original_code': snippet["content"],
-                    'baseline_code': baseline_code if baseline_code else "Failed to generate baseline optimization",
-                    'generated_code': generated_code if generated_code else "Failed to generate meta-prompt optimization"
+                    'optimized_versions': optimized_versions
                 }
+                
                 results.append(result)
+                successful_snippets += 1
                 
                 # Send progress update with the snippet result
                 if self.progress_callback:
                     self.progress_callback({"status": "snippet_complete", "result": result})
-                
-                successful_snippets += 1
             
             # Calculate average ratings across all snippets
             if results:
-                avg_ratings = {
-                    'original': np.mean([r['original_rating'] for r in results]),
-                    'baseline': np.mean([r['baseline_rating'] for r in results]),
-                    'generated': np.mean([r['generated_rating'] for r in results])
-                }
-                
-                avg_ratings_by_order = {
-                    'forward_order': {
-                        'original': np.mean([r['ratings_by_order']['forward_order']['original'] for r in results]),
-                        'baseline': np.mean([r['ratings_by_order']['forward_order']['baseline'] for r in results]),
-                        'generated': np.mean([r['ratings_by_order']['forward_order']['generated'] for r in results])
-                    },
-                    'reverse_order': {
-                        'original': np.mean([r['ratings_by_order']['reverse_order']['original'] for r in results]),
-                        'baseline': np.mean([r['ratings_by_order']['reverse_order']['baseline'] for r in results]),
-                        'generated': np.mean([r['ratings_by_order']['reverse_order']['generated'] for r in results])
-                    }
-                }
+                avg_ratings = {}
+                for version in all_versions:
+                    ratings = [r['ratings'][version] for r in results]
+                    avg_ratings[version] = sum(ratings) / len(ratings)
             else:
-                avg_ratings = {
-                    'original': 1500.0,
-                    'baseline': 1500.0,
-                    'generated': 1500.0
-                }
-                avg_ratings_by_order = {
-                    'forward_order': {'original': 1500.0, 'baseline': 1500.0, 'generated': 1500.0},
-                    'reverse_order': {'original': 1500.0, 'baseline': 1500.0, 'generated': 1500.0}
-                }
+                avg_ratings = {version: 1500.0 for version in all_versions}
             
-            # Prepare final results
+            # Prepare final results with complete configuration
             final_results = {
                 'benchmark_info': benchmark_data['metadata'],
                 'prompts': {
                     'baseline': self.current_prompt,
-                    'generated': generated_prompt
+                    **generated_prompts
                 },
-                'meta_prompt_used': self.filled_meta_prompt,
+                'meta_prompts': {
+                    template_id: {
+                        'name': META_PROMPT_TEMPLATES[template_id]['name'],
+                        'description': META_PROMPT_TEMPLATES[template_id]['description'],
+                        'filled_template': self.filled_meta_prompts[template_id]
+                    }
+                    for template_id in self.selected_templates
+                },
                 'task_name': self.task_name,
+                'task_description': self.custom_task_description or OPTIMIZATION_TASKS[self.task_name]["description"],
+                'task_objective': OPTIMIZATION_TASKS[self.task_name]["objective"],
+                'task_considerations': OPTIMIZATION_TASKS[self.task_name]["considerations"],
+                'llm_type': str(self.llm_type),
+                'judge_llm_type': str(self.judge_llm_type),
+                'synthesis_llm_type': str(self.synthesis_llm_type),  # Add synthesis LLM type
+                'selected_templates': self.selected_templates,
                 'results': results,
                 'average_ratings': avg_ratings,
-                'average_ratings_by_order': avg_ratings_by_order,
                 'statistics': {
                     'total_snippets': total_snippets,
                     'successful_snippets': successful_snippets,
@@ -563,22 +585,32 @@ def save_evaluation_results(results: Dict[str, Any], output_dir: str = "results"
     filename = f"{project_name}_{task_name}_{timestamp}_evaluation.json"
     filepath = os.path.join(output_dir, filename)
     
+    # Create a copy of results to modify
+    results_to_save = results.copy()
+    
     # Add configuration information to results
-    results["configuration"] = {
-        "task_name": task_name,  # Use the same task name
-        "llm_type": str(results.get("llm_type", "unknown")),
-        "judge_llm_type": str(results.get("judge_llm_type", "unknown")),
+    results_to_save["configuration"] = {
+        "task_name": results.get("task_name"),
+        "task_description": results.get("task_description"),
+        "task_objective": results.get("task_objective"),
+        "task_considerations": results.get("task_considerations"),
+        "llm_type": results.get("llm_type"),
+        "judge_llm_type": results.get("judge_llm_type"),
         "baseline_prompt": results.get("prompts", {}).get("baseline", ""),
-        "generated_prompt": results.get("prompts", {}).get("generated", ""),
-        "meta_prompt_used": results.get("meta_prompt_used", ""),
-        "custom_task_description": results.get("custom_task_description", ""),
-        "custom_meta_prompt": results.get("custom_meta_prompt", ""),
-        "evaluation_timestamp": timestamp
+        "generated_prompts": results.get("prompts", {}),  # Save all prompts
+        "meta_prompts": results.get("meta_prompts", {}),  # Save all meta-prompts
+        "selected_templates": results.get("selected_templates", []),  # Save which templates were used
+        "evaluation_timestamp": timestamp,
+        "statistics": results.get("statistics", {
+            "total_snippets": 0,
+            "successful_snippets": 0,
+            "failed_snippets": 0
+        })
     }
     
     # Save results
     with open(filepath, 'w') as f:
-        json.dump(results, f, indent=2)
+        json.dump(results_to_save, f, indent=2)
         
     logger.info(f"Results saved to: {filepath}")
     return filepath

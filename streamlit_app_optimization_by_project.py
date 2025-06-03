@@ -349,10 +349,10 @@ def main():
                 # Display code
                 st.markdown("#### Code Comparison")
                 col1, col2, col3 = st.columns(3)
-                with col1:
+                    with col1:
                     st.markdown("**Original Code**")
                     st.code(result['original_code'])
-                with col2:
+                    with col2:
                     st.markdown("**Baseline Optimization**")
                     st.code(result['baseline_code'])
                 with col3:

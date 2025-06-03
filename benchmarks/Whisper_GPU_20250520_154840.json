@@ -1,0 +1,303 @@
+{
+  "metadata": {
+    "collected_at": "20250520_154840",
+    "project_info": {
+      "project_id": "1cf9f904-d506-4a27-969f-ae6db943eb55",
+      "name": "Whisper GPU",
+      "description": null,
+      "language": "py"
+    }
+  },
+  "code_snippets": [
+    {
+      "id": "346b4512-7ab3-470d-b3ad-71125332e203",
+      "content": "    def __init__(\n        self, n_vocab: int, n_ctx: int, n_state: int, n_head: int, n_layer: int\n    ):\n        super().__init__()\n\n        self.token_embedding = nn.Embedding(n_vocab, n_state)\n        self.positional_embedding = nn.Parameter(torch.empty(n_ctx, n_state))\n\n        self.blocks: Iterable[ResidualAttentionBlock] = nn.ModuleList(\n            [\n                ResidualAttentionBlock(n_state, n_head, cross_attention=True)\n                for _ in range(n_layer)\n            ]\n        )\n        self.ln = LayerNorm(n_state)\n\n        mask = torch.empty(n_ctx, n_ctx).fill_(-np.inf).triu_(1)\n        self.register_buffer(\"mask\", mask, persistent=False)\n\n        # Optimisation: pre-compute and register the mask in CUDA if available\n        if torch.cuda.is_available():\n            self.register_buffer(\"mask_cuda\", mask.cuda(), persistent=False)",
+      "construct_id": "52938f9c-b54c-419b-843a-046fa6d0e35a",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:46.905508",
+        "updated_at": "2025-03-06T11:14:46.905517",
+        "language": "py",
+        "file": "whisper/model.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 208,
+          "end": 229
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 4",
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE"
+        ]
+      }
+    },
+    {
+      "id": "f6fb2235-7f0f-402b-a8af-f4a8cc29c91f",
+      "content": "    def __init__(self, dims: ModelDimensions):\n        super().__init__()\n        self.dims = dims\n        self.encoder = AudioEncoder(\n            self.dims.n_mels,\n            self.dims.n_audio_ctx,\n            self.dims.n_audio_state,\n            self.dims.n_audio_head,\n            self.dims.n_audio_layer,\n        )\n        self.decoder = TextDecoder(\n            self.dims.n_vocab,\n            self.dims.n_text_ctx,\n            self.dims.n_text_state,\n            self.dims.n_text_head,\n            self.dims.n_text_layer,\n        )\n        # use the last half among the decoder layers for time alignment by default;\n        # to use a specific set of heads, see `set_alignment_heads()` below.\n        all_heads = torch.zeros(\n            self.dims.n_text_layer, self.dims.n_text_head, dtype=torch.bool\n        )\n        all_heads[self.dims.n_text_layer // 2 :] = True\n        self.register_buffer(\"alignment_heads\", all_heads.to_sparse(), persistent=False)",
+      "construct_id": "453d31ab-50eb-40bf-b8f6-0d334450d1d3",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:46.906592",
+        "updated_at": "2025-03-06T11:14:46.906602",
+        "language": "py",
+        "file": "whisper/model.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 294,
+          "end": 317
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE",
+          "RANK 5"
+        ]
+      }
+    },
+    {
+      "id": "17fcb2a6-35f9-4525-9cc1-e192f570790c",
+      "content": "def load_model(\n    name: str,\n    device: Optional[Union[str, torch.device]] = None,\n    download_root: str = None,\n    in_memory: bool = False,\n) -> Whisper:\n    \"\"\"\n    Load a Whisper ASR model\n\n    Parameters\n    ----------\n    name : str\n        one of the official model names listed by `whisper.available_models()`, or\n        path to a model checkpoint containing the model dimensions and the model state_dict.\n    device : Union[str, torch.device]\n        the PyTorch device to put the model into\n    download_root: str\n        path to download the model files; by default, it uses \"~/.cache/whisper\"\n    in_memory: bool\n        whether to preload the model weights into host memory\n\n    Returns\n    -------\n    model : Whisper\n        The Whisper ASR model instance\n    \"\"\"\n\n    if device is None:\n        device = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n    if download_root is None:\n        default = os.path.join(os.path.expanduser(\"~\"), \".cache\")\n        download_root = os.path.join(os.getenv(\"XDG_CACHE_HOME\", default), \"whisper\")\n\n    if name in _MODELS:\n        checkpoint_file = _download(_MODELS[name], download_root, in_memory)\n        alignment_heads = _ALIGNMENT_HEADS[name]\n    elif os.path.isfile(name):\n        checkpoint_file = open(name, \"rb\").read() if in_memory else name\n        alignment_heads = None\n    else:\n        raise RuntimeError(\n            f\"Model {name} not found; available models = {available_models()}\"\n        )\n\n    with (\n        io.BytesIO(checkpoint_file) if in_memory else open(checkpoint_file, \"rb\")\n    ) as fp:\n        checkpoint = torch.load(fp, map_location=device)\n    del checkpoint_file\n\n    dims = ModelDimensions(**checkpoint[\"dims\"])\n    model = Whisper(dims)\n    model.load_state_dict(checkpoint[\"model_state_dict\"])\n\n    if alignment_heads is not None:\n        model.set_alignment_heads(alignment_heads)\n\n    return model.to(device)",
+      "construct_id": "257d2fe7-2972-45ef-b386-205857ebc5bd",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:46.908062",
+        "updated_at": "2025-03-06T11:14:46.908072",
+        "language": "py",
+        "file": "whisper/__init__.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 115,
+          "end": 172
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE",
+          "RANK 6"
+        ]
+      }
+    },
+    {
+      "id": "91964110-c960-4ad4-936c-fc9da447a305",
+      "content": "",
+      "construct_id": "6789206f-3d15-45e2-a18a-ae928e6df998",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:46.956247",
+        "updated_at": "2025-03-06T11:14:46.956261",
+        "language": "py",
+        "file": ".venv/lib/python3.11/site-packages/torch/nn/modules/module.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 1735,
+          "end": 1739
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE",
+          "RANK 7"
+        ]
+      }
+    },
+    {
+      "id": "5d86f3e6-04de-4909-840a-169229a4ffd8",
+      "content": "",
+      "construct_id": "89efb10d-ec1d-4e0c-ae50-bce423df779c",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:47.016906",
+        "updated_at": "2025-03-06T11:14:47.016920",
+        "language": "py",
+        "file": ".venv/lib/python3.11/site-packages/torch/utils/_contextlib.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 114,
+          "end": 116
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 8",
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE"
+        ]
+      }
+    },
+    {
+      "id": "2459dce1-00d1-4892-9d1e-ec675a1ecf53",
+      "content": "",
+      "construct_id": "6a61674d-1aa8-4f6c-93d2-13304854d8fc",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:47.068986",
+        "updated_at": "2025-03-06T11:14:47.069000",
+        "language": "py",
+        "file": ".venv/lib/python3.11/site-packages/torch/nn/modules/module.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 1743,
+          "end": 1875
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE",
+          "RANK 9"
+        ]
+      }
+    },
+    {
+      "id": "1cbcd5b9-27c3-40e6-8ffc-3d8c51961695",
+      "content": "    def forward(self, x: Tensor) -> Tensor:\n        return super().forward(x.float()).type(x.dtype)",
+      "construct_id": "821d5091-79d3-4bca-8284-748e5b8e80fb",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:47.069847",
+        "updated_at": "2025-03-06T11:14:47.069857",
+        "language": "py",
+        "file": "whisper/model.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 40,
+          "end": 41
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 10",
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE"
+        ]
+      }
+    },
+    {
+      "id": "d9d725d6-46d0-4180-9188-2e2e49456cb0",
+      "content": "    def __init__(self, n_state: int, n_head: int, cross_attention: bool = False):\n        super().__init__()\n\n        self.attn = MultiHeadAttention(n_state, n_head)\n        self.attn_ln = LayerNorm(n_state)\n\n        self.cross_attn = (\n            MultiHeadAttention(n_state, n_head) if cross_attention else None\n        )\n        self.cross_attn_ln = LayerNorm(n_state) if cross_attention else None\n\n        n_mlp = n_state * 4\n        self.mlp = nn.Sequential(\n            Linear(n_state, n_mlp), nn.GELU(), Linear(n_mlp, n_state)\n        )\n        self.mlp_ln = LayerNorm(n_state)",
+      "construct_id": "c3563b92-4e43-46b3-acc4-1a495c7d3384",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:46.903854",
+        "updated_at": "2025-03-06T11:14:46.903864",
+        "language": "py",
+        "file": "whisper/model.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 143,
+          "end": 158
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 2",
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE"
+        ]
+      }
+    },
+    {
+      "id": "b12dee23-3e33-465f-870b-213ea29528ab",
+      "content": "    def __init__(self, n_state: int, n_head: int):\n        super().__init__()\n        self.n_head = n_head\n        self.query = Linear(n_state, n_state)\n        self.key = Linear(n_state, n_state, bias=False)\n        self.value = Linear(n_state, n_state)\n        self.out = Linear(n_state, n_state)",
+      "construct_id": "33edafef-4629-4239-ba74-f3a8f2b2933b",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:46.902855",
+        "updated_at": "2025-03-06T11:14:46.902868",
+        "language": "py",
+        "file": "whisper/model.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 84,
+          "end": 90
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1",
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE"
+        ]
+      }
+    },
+    {
+      "id": "cb775885-1413-4c67-88b4-98fb931d77ea",
+      "content": "    def __init__(\n        self, n_mels: int, n_ctx: int, n_state: int, n_head: int, n_layer: int\n    ):\n        super().__init__()\n        self.conv1 = Conv1d(n_mels, n_state, kernel_size=3, padding=1)\n        self.conv2 = Conv1d(n_state, n_state, kernel_size=3, stride=2, padding=1)\n        self.register_buffer(\"positional_embedding\", sinusoids(n_ctx, n_state))\n\n        self.blocks: Iterable[ResidualAttentionBlock] = nn.ModuleList(\n            [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)]\n        )\n        self.ln_post = LayerNorm(n_state)",
+      "construct_id": "e5324db8-df6b-405d-b387-334a0144a4e0",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-03-06T11:14:46.904617",
+        "updated_at": "2025-03-06T11:14:46.904630",
+        "language": "py",
+        "file": "whisper/model.py",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 175,
+          "end": 186
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "PROFILER",
+          "SPEEDSCOPE",
+          "RANK 3"
+        ]
+      }
+    }
+  ]
+}
