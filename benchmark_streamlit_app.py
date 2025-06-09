@@ -97,6 +97,10 @@ def initialize_session_state():
     # Initialize selected_templates if not present
     if "selected_templates" not in st.session_state:
         st.session_state.selected_templates = []
+    
+    # Initialize interpretation level preferences
+    if "interpretation_level_preference" not in st.session_state:
+        st.session_state.interpretation_level_preference = "Game-Level"
 
 # Define consistent colors and order for versions
 VERSION_ORDER = ["baseline", "standard", "simplified"]  # Define the fixed order
@@ -351,14 +355,24 @@ def display_snippet_result(result, snippet_number, key_suffix):
             for comp in result.get('comparisons', []):
                 if not isinstance(comp, dict) or 'comparison' not in comp or 'score' not in comp:
                     continue
+                
+                # Note: No need to skip averaged comparisons since we no longer store them
                     
                 names = comp['comparison'].split(' vs ')
+                # Clean up version names (remove any suffixes like "(averaged)")
+                clean_names = []
+                for name in names:
+                    clean_name = name.split(' (')[0].strip()  # Remove anything after " ("
+                    clean_names.append(clean_name)
+                
                 score = comp['score']
                 
-                if score == 1.0:  # First version wins
-                    version_wins[names[0]] += 1
-                elif score == 0.0:  # Second version wins
-                    version_wins[names[1]] += 1
+                # Only count wins from actual version names that exist in our version_wins dict
+                if len(clean_names) == 2:
+                    if score == 1.0 and clean_names[0] in version_wins:  # First version wins
+                        version_wins[clean_names[0]] += 1
+                    elif score == 0.0 and clean_names[1] in version_wins:  # Second version wins
+                        version_wins[clean_names[1]] += 1
                 # Ties are not counted as wins
             
             # Create two columns for the summary
@@ -398,18 +412,33 @@ def display_snippet_result(result, snippet_number, key_suffix):
                 detailed_data = []
                 for comp in result.get('comparisons', []):
                     names = comp['comparison'].split(' vs ')
+                    # Clean up version names (remove any suffixes like "(averaged)")
+                    clean_names = []
+                    for name in names:
+                        clean_name = name.split(' (')[0].strip()  # Remove anything after " ("
+                        clean_names.append(clean_name)
+                    
                     score = comp['score']
+                    comp_type = comp.get('type', 'single')
                     
                     if score == 1.0:
-                        result_text = f"{names[0]} wins"
+                        result_text = f"{clean_names[0]} wins"
                     elif score == 0.0:
-                        result_text = f"{names[1]} wins"
+                        result_text = f"{clean_names[1]} wins"
                     else:
                         result_text = "Tie"
+                    
+                    # Add type indicator
+                    type_indicator = {
+                        'single': '',
+                        'forward': ' →',
+                        'reverse': ' ←'
+                    }.get(comp_type, '')
                         
                     detailed_data.append({
-                        "Comparison": comp['comparison'],
-                        "Result": result_text
+                        "Comparison": comp['comparison'] + type_indicator,
+                        "Result": result_text,
+                        "Score": f"{score:.2f}"
                     })
                 
                 df = pd.DataFrame(detailed_data)
@@ -419,11 +448,12 @@ def display_snippet_result(result, snippet_number, key_suffix):
                     if 'wins' not in val:
                         return ''
                     winner = val.split(' ')[0].lower()
+                    # Create color mapping using clean version names
                     colors = {version.lower(): f'background-color: {color}; color: white'
                              for version, color in COLOR_MAP.items()}
                     return colors.get(winner, '')
                 
-                styled_df = df.style.applymap(color_winners, subset=['Result'])
+                styled_df = df.style.map(color_winners, subset=['Result'])
                 st.table(styled_df)
         
         # Display code if available
@@ -535,7 +565,7 @@ def display_elo_interpretation(ratings, title_prefix=""):
         except:
             return ''
     
-    styled_df = matrix_df.style.applymap(color_probabilities, subset=matrix_df.columns[1:])
+    styled_df = matrix_df.style.map(color_probabilities, subset=matrix_df.columns[1:])
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
     
     # Explanation
@@ -1005,15 +1035,113 @@ def display_overall_combined_results(combined_results, key_suffix):
             st.markdown("- When some benchmarks consistently rate versions differently")
             st.markdown("- Project-level gives equal weight to each benchmark regardless of snippet count")
         
-        # 5. ELO Rating Interpretation (using Game-Level ratings)
+        # 5. ELO Rating Interpretation with Level Selection
         st.markdown("---")
-        display_elo_interpretation(game_level_ratings, "Game-Level ")
+        st.markdown("##### ELO Rating Interpretation")
+        
+        # Calculate all levels for selection and store in session state to persist
+        # Snippet-level ratings (already calculated as avg_ratings)
+        snippet_ratings = avg_ratings
+        
+        # Project-level ratings  
+        project_ratings = {}
+        for version in avg_ratings.keys():
+            project_averages = []
+            for bench in all_benchmark_results:
+                bench_avg = bench.get("average_ratings", {}).get(version)
+                if bench_avg is not None:
+                    project_averages.append(bench_avg)
+            project_ratings[version] = sum(project_averages) / len(project_averages) if project_averages else 0
+        
+        # Store all rating levels in session state for persistence
+        interpretation_key = f"interpretation_data_{key_suffix}"
+        if interpretation_key not in st.session_state:
+            st.session_state[interpretation_key] = {
+                "game_level": game_level_ratings,
+                "snippet_level": snippet_ratings,
+                "project_level": project_ratings
+            }
+        
+        # Let user choose which ELO level to use for interpretation
+        interpretation_level = st.radio(
+            "Choose ELO rating level for detailed interpretation:",
+            options=["Game-Level", "Snippet-Level", "Project-Level"],
+            index=0,  # Default to Game-Level
+            help="Select which ELO rating calculation method to use for win probability analysis",
+            horizontal=True,
+            key=f"interpretation_level_combined_{key_suffix}"
+        )
+        
+        # Display interpretation based on selected level with error handling
+        # Use stored data to ensure persistence across reruns
+        stored_data = st.session_state[interpretation_key]
+        
+        try:
+            if interpretation_level == "Game-Level":
+                if stored_data["game_level"]:
+                    display_elo_interpretation(stored_data["game_level"], "Game-Level ")
+                else:
+                    st.error("Game-level ratings not available")
+            elif interpretation_level == "Snippet-Level":
+                if stored_data["snippet_level"]:
+                    display_elo_interpretation(stored_data["snippet_level"], "Snippet-Level ")
+                else:
+                    st.error("Snippet-level ratings not available")
+            else:  # Project-Level
+                if stored_data["project_level"]:
+                    display_elo_interpretation(stored_data["project_level"], "Project-Level ")
+                else:
+                    st.error("Project-level ratings not available")
+        except Exception as e:
+            st.error(f"Error displaying ELO interpretation: {str(e)}")
+            st.write("Debug info:", {
+                "interpretation_level": interpretation_level,
+                "stored_data_keys": list(stored_data.keys()) if stored_data else []
+            })
         
     else:
         st.warning("Individual comparison data not available for game-level ELO computation.")
-        # Fallback to snippet-level interpretation if game-level unavailable
+        # Fallback options when game-level unavailable
         st.markdown("---")
-        display_elo_interpretation(avg_ratings, "Snippet-Level ")
+        st.markdown("##### ELO Rating Interpretation")
+        
+        # Calculate project-level ratings for fallback
+        project_ratings = {}
+        for version in avg_ratings.keys():
+            project_averages = []
+            for bench in all_benchmark_results:
+                bench_avg = bench.get("average_ratings", {}).get(version)
+                if bench_avg is not None:
+                    project_averages.append(bench_avg)
+            project_ratings[version] = sum(project_averages) / len(project_averages) if project_averages else 0
+        
+        interpretation_level = st.radio(
+            "Choose ELO rating level for detailed interpretation:",
+            options=["Snippet-Level", "Project-Level"],
+            index=0,  # Default to Snippet-Level when game-level unavailable
+            help="Game-level analysis not available. Select between snippet-level and project-level ratings.",
+            horizontal=True,
+            key=f"interpretation_level_fallback_{key_suffix}"
+        )
+        
+        try:
+            if interpretation_level == "Snippet-Level":
+                if avg_ratings:
+                    display_elo_interpretation(avg_ratings, "Snippet-Level ")
+                else:
+                    st.error("Snippet-level ratings not available")
+            else:  # Project-Level
+                if project_ratings:
+                    display_elo_interpretation(project_ratings, "Project-Level ")
+                else:
+                    st.error("Project-level ratings not available")
+        except Exception as e:
+            st.error(f"Error displaying ELO interpretation: {str(e)}")
+            st.write("Debug info:", {
+                "interpretation_level": interpretation_level,
+                "avg_ratings_available": bool(avg_ratings),
+                "project_ratings_available": bool(project_ratings)
+            })
     
 
 
@@ -1106,9 +1234,22 @@ def display_final_results(final_results, key_suffix):
                 stats_df = pd.DataFrame(stats_data)
                 st.dataframe(stats_df, use_container_width=True, hide_index=True)
         
-        # Add ELO interpretation section
+        # Add ELO interpretation section with level selection
         st.markdown("---")
-        display_elo_interpretation(avg_ratings)
+        st.markdown("##### ELO Rating Interpretation")
+        
+        # For individual benchmarks, only snippet-level is available (since it's just one benchmark)
+        # But we can still give users the choice to see it labeled appropriately
+        interpretation_level = st.radio(
+            "ELO rating level for detailed interpretation:",
+            options=["Snippet-Level"],
+            index=0,
+            help="For individual benchmark results, only snippet-level analysis is available",
+            horizontal=True,
+            key=f"interpretation_level_{key_suffix}"
+        )
+        
+        display_elo_interpretation(avg_ratings, "Snippet-Level ")
     
     else:
         # Fallback to bar chart if no individual results available
@@ -1144,7 +1285,18 @@ def display_final_results(final_results, key_suffix):
         
         # Add ELO interpretation for fallback case too
         st.markdown("---")
-        display_elo_interpretation(avg_ratings)
+        st.markdown("##### ELO Rating Interpretation")
+        
+        interpretation_level = st.radio(
+            "ELO rating level for detailed interpretation:",
+            options=["Snippet-Level"],
+            index=0,
+            help="For individual benchmark results, only snippet-level analysis is available",
+            horizontal=True,
+            key=f"interpretation_level_fallback_{key_suffix}"
+        )
+        
+        display_elo_interpretation(avg_ratings, "Snippet-Level ")
     
     if 'results' in final_results:
         # Create progression chart
@@ -1194,10 +1346,71 @@ def load_saved_results():
     # Sort files by timestamp (newest first)
     saved_files.sort(reverse=True)
     
+    def format_filename(filename):
+        """Format filename for better readability in dropdown"""
+        # Remove .json extension
+        name = filename.replace('.json', '')
+        
+        if name.startswith('combined_'):
+            # For combined files: combined_ProjectA_ProjectB_task_timestamp
+            parts = name.split('_')
+            if len(parts) >= 4:
+                # Extract projects (between 'combined' and task)
+                projects = []
+                task_idx = -2  # task is usually second to last, timestamp is last
+                for i in range(1, len(parts) + task_idx):  # Skip 'combined', stop before task
+                    projects.append(parts[i])
+                
+                task = parts[task_idx]
+                timestamp = parts[-1]
+                
+                # Format timestamp as date/time
+                try:
+                    if len(timestamp) == 15:  # YYYYMMDD_HHMMSS format
+                        date_part = timestamp[:8]
+                        time_part = timestamp[9:]
+                        formatted_time = f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]} {time_part[:2]}:{time_part[2:4]}"
+                    else:
+                        formatted_time = timestamp
+                except:
+                    formatted_time = timestamp
+                
+                # Limit project names for brevity
+                if len(projects) > 3:
+                    project_str = f"{projects[0]}+{len(projects)-1} more"
+                else:
+                    project_str = "+".join(projects)
+                
+                return f"📊 {formatted_time} | Combined: {project_str} | {task}"
+            else:
+                return f"📊 Combined | {name}"
+        else:
+            # For individual files: project_task_timestamp_evaluation
+            parts = name.split('_')
+            if len(parts) >= 3:
+                project = parts[0]
+                task = parts[1] if len(parts) > 3 else "unknown"
+                timestamp = parts[-2] if parts[-1] == 'evaluation' else parts[-1]
+                
+                # Format timestamp as date/time
+                try:
+                    if len(timestamp) == 15:  # YYYYMMDD_HHMMSS format
+                        date_part = timestamp[:8]
+                        time_part = timestamp[9:]
+                        formatted_time = f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]} {time_part[:2]}:{time_part[2:4]}"
+                    else:
+                        formatted_time = timestamp
+                except:
+                    formatted_time = timestamp
+                
+                return f"📄 {formatted_time} | {project} | {task}"
+            else:
+                return f"📄 {name}"
+    
     selected_file = st.sidebar.selectbox(
         "Select Saved Results",
         options=saved_files,
-        format_func=lambda x: x.replace('.json', '').replace('_', ' ')
+        format_func=format_filename
     )
     
     if st.sidebar.button("Load Selected Results"):
@@ -1257,6 +1470,14 @@ def load_saved_results():
             st.sidebar.text(f"Optimization LLM: {str(config.get('llm_type', 'Unknown')).replace('LLMType.', '')}")
             st.sidebar.text(f"Judge LLM: {str(config.get('judge_llm_type', 'Unknown')).replace('LLMType.', '')}")
             st.sidebar.text(f"Synthesis LLM: {str(config.get('synthesis_llm_type', 'Unknown')).replace('LLMType.', '')}")
+            
+            # Comparison Configuration
+            st.sidebar.markdown("#### Comparison Configuration")
+            reverse_enabled = config.get('enable_reverse_comparisons', False)
+            st.sidebar.text(f"Reverse Comparisons: {'✅ Enabled' if reverse_enabled else '❌ Disabled'}")
+            if reverse_enabled:
+                st.sidebar.text("• Performed A vs B and B vs A for each pair")
+                st.sidebar.text("• Averaged results for robustness")
             
             # Templates Used
             st.sidebar.markdown("#### Templates Used")
@@ -1521,6 +1742,14 @@ def main():
         help="LLM that will generate optimization prompts from meta-prompt templates"
     )
     
+    # Reverse comparisons configuration
+    st.sidebar.markdown("### Comparison Configuration")
+    enable_reverse_comparisons = st.sidebar.checkbox(
+        "Enable Reverse Comparisons",
+        value=False,
+        help="Perform both A vs B and B vs A comparisons for each pair, then average the results. This improves robustness by reducing position bias but doubles the number of API calls."
+    )
+    
     # Custom prompt input
     custom_baseline_prompt = st.sidebar.text_area(
         "Baseline Optimization Prompt",
@@ -1630,6 +1859,7 @@ def main():
                     custom_task_description=custom_task_description,
                     custom_meta_prompt=custom_meta_prompt,
                     selected_templates=st.session_state.selected_templates,
+                    enable_reverse_comparisons=enable_reverse_comparisons,
                     progress_callback=lambda x: handle_progress_update(x, containers)
                 )
                 
@@ -1637,27 +1867,28 @@ def main():
                 
                 if results:
                     all_results.append(results)
-                    
-                    # Save individual results
-                    saved_file = save_evaluation_results(results)
-                    containers["progress"].success(f"Results for {benchmark_file} saved to: {saved_file}")
-                    
-                    # Create download button for this benchmark's results
-                    with open(saved_file, "r") as f:
-                        results_json = f.read()
-                    
-                    st.download_button(
-                        label=f"Download Results for {benchmark_file}",
-                        data=results_json,
-                        file_name=os.path.basename(saved_file),
-                        mime="application/json",
-                        help=f"Download results for {benchmark_file}"
-                    )
                 else:
                     containers["progress"].error(f"Failed to evaluate {benchmark_file}")
             
-            # Only save combined results if there are multiple benchmarks
-            if len(all_results) > 1:
+            # Handle results saving based on number of benchmarks
+            if len(all_results) == 1:
+                # Single benchmark - save individual results
+                single_result = all_results[0]
+                saved_file = save_evaluation_results(single_result)
+                containers["progress"].success(f"Results saved to: {saved_file}")
+                
+                # Create download button for single benchmark results
+                with open(saved_file, "r") as f:
+                    results_json = f.read()
+                
+                st.download_button(
+                    label="Download Results",
+                    data=results_json,
+                    file_name=os.path.basename(saved_file),
+                    mime="application/json",
+                    help="Download evaluation results"
+                )
+            elif len(all_results) > 1:
                 # Calculate overall average ratings across all snippets
                 all_versions = set()
                 all_snippet_ratings = {}
@@ -1715,6 +1946,9 @@ def main():
                     help="Download combined results from all benchmarks"
                 )
                 
+                # Store combined results in session state for persistence
+                st.session_state.app_state["combined_results"] = combined_results
+                
                 # Display overall average ratings
                 with containers["final_results"]:
                     total_snippets = combined_results["overall_statistics"]["successful_snippets"]
@@ -1729,7 +1963,11 @@ def main():
                         "average_ratings": overall_average_ratings,
                         "results": all_snippet_results
                     }
-                    display_overall_combined_results(combined_results, f"overall_{timestamp}")
+                    try:
+                        display_overall_combined_results(combined_results, f"overall_{timestamp}")
+                    except Exception as e:
+                        st.error(f"Error displaying combined results: {str(e)}")
+                        st.write("Please try refreshing the page or re-running the evaluation.")
             
             st.session_state.app_state["optimization_results"] = all_results[0] if len(all_results) == 1 else combined_results
             st.session_state.app_state["has_evaluated"] = True

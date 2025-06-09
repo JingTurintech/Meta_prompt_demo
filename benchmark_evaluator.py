@@ -244,6 +244,7 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
                  custom_task_description: Optional[str] = None,
                  custom_meta_prompt: Optional[str] = None,
                  selected_templates: Optional[List[str]] = None,
+                 enable_reverse_comparisons: bool = False,
                  progress_callback: Optional[callable] = None):
         self.task_name = task_name
         self.llm_type = llm_type
@@ -254,6 +255,7 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
         self.custom_task_description = custom_task_description
         self.custom_meta_prompt = custom_meta_prompt
         self.selected_templates = selected_templates or ["standard"]  # Default to standard template if none selected
+        self.enable_reverse_comparisons = enable_reverse_comparisons
         self.progress_callback = progress_callback
         self.vision_async_client = None
         self.llm_judge = None
@@ -420,10 +422,13 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
             successful_snippets = 0
             
             for idx, snippet in enumerate(benchmark_data["code_snippets"], 1):
+                snippet_id = snippet.get("id", f"snippet_{idx}")
+                logger.info(f"🔄 Starting processing of snippet {idx}/{total_snippets}: {snippet_id}")
+                
                 if self.progress_callback:
                     self.progress_callback({
                         "status": "processing_snippet",
-                        "message": f"Processing snippet {idx}/{total_snippets} (Successfully processed: {successful_snippets})",
+                        "message": f"Processing snippet {idx}/{total_snippets}: {snippet_id} (Successfully processed: {successful_snippets})",
                         "progress": idx / total_snippets
                     })
                 
@@ -433,25 +438,29 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
                 # Generate optimized versions using each template
                 optimized_versions = {}
                 try:
+                    logger.info(f"  📝 Generating optimizations for snippet {snippet_id}")
                     # First, generate baseline optimization
+                    logger.info(f"    • Generating baseline optimization...")
                     baseline_code = await self.optimize_code(snippet["content"], self.current_prompt)
                     optimized_versions["baseline"] = baseline_code
                     
                     # Then generate optimizations for each template
                     for template_id, prompt in generated_prompts.items():
+                        logger.info(f"    • Generating {template_id} optimization...")
                         optimized_code = await self.optimize_code(snippet["content"], prompt)
                         optimized_versions[template_id] = optimized_code
+                    
+                    logger.info(f"  ✅ Generated {len(optimized_versions)} optimizations for snippet {snippet_id}")
                 except Exception as e:
-                    logger.error(f"Error optimizing snippet {snippet['id']}: {str(e)}")
+                    logger.error(f"❌ Error optimizing snippet {snippet_id}: {str(e)}")
                     continue
                 
                 # Skip if all optimizations failed
                 if all(code is None for code in optimized_versions.values()):
-                    logger.warning(f"All optimizations failed for snippet {snippet['id']}, skipping...")
+                    logger.warning(f"⚠️  All optimizations failed for snippet {snippet_id}, skipping...")
                     continue
                 
                 # Create unique IDs for each code version
-                snippet_id = snippet["id"]
                 code_ids = {
                     "original": f"{snippet_id}_original",
                     "baseline": f"{snippet_id}_baseline",
@@ -465,6 +474,12 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
                 # Reset rating system for this snippet
                 self.rating_system = CodeRatingSystem()
                 
+                logger.info(f"  ⚔️  Running comparisons for snippet {snippet_id} ({len(all_versions)} versions)")
+                comparison_count = 0
+                total_comparisons = len(all_versions) * (len(all_versions) - 1) // 2
+                if self.enable_reverse_comparisons:
+                    total_comparisons *= 2  # Double for reverse comparisons
+                
                 # Compare each version with every other version
                 for i, version1 in enumerate(all_versions):
                     for version2 in all_versions[i+1:]:
@@ -474,31 +489,72 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
                         # Skip if either code is None
                         if code1 is None or code2 is None:
                             continue
-                            
-                        # Get LLM judge's verdict
-                        score = await self.llm_judge.compare_code(code1, code2)
-                        logger.info(f"Comparison {version1} vs {version2}: {score}")
                         
-                        # Update ELO ratings based on comparison
-                        if score == 1.0:  # code1 wins
+                        comparison_count += 1
+                        
+                        # Forward comparison: version1 vs version2
+                        logger.info(f"    [{snippet_id}] Comparison {comparison_count}/{total_comparisons}: {version1} vs {version2}")
+                        score_forward = await self.llm_judge.compare_code(code1, code2)
+                        logger.info(f"    [{snippet_id}] → Forward result: {score_forward}")
+                        
+                        if self.enable_reverse_comparisons:
+                            comparison_count += 1
+                            # Reverse comparison: version2 vs version1
+                            logger.info(f"    [{snippet_id}] Comparison {comparison_count}/{total_comparisons}: {version2} vs {version1} (reverse)")
+                            score_reverse = await self.llm_judge.compare_code(code2, code1)
+                            logger.info(f"    [{snippet_id}] → Reverse result: {score_reverse}")
+                            
+                            # Average the scores for more robust results
+                            # Note: reverse score needs to be inverted (1.0 - score_reverse)
+                            avg_score = (score_forward + (1.0 - score_reverse)) / 2.0
+                            logger.info(f"    [{snippet_id}] → Averaged score: {avg_score} (forward: {score_forward}, reverse: {score_reverse})")
+                            
+                            # Store both individual comparisons for transparency
+                            # Note: We don't store the averaged result to keep the detailed table clean
+                            comparison_results.append({
+                                'comparison': f"{version1} vs {version2}",
+                                'score': score_forward,
+                                'type': 'forward'
+                            })
+                            comparison_results.append({
+                                'comparison': f"{version2} vs {version1}",
+                                'score': score_reverse,
+                                'type': 'reverse'
+                            })
+                            
+                            # Use averaged score for ELO rating updates
+                            final_score = avg_score
+                        else:
+                            # Use only forward comparison
+                            final_score = score_forward
+                            comparison_results.append({
+                                'comparison': f"{version1} vs {version2}",
+                                'score': score_forward,
+                                'type': 'single'
+                            })
+                        
+                        # Update ELO ratings based on final score
+                        if final_score > 0.6:  # Strong preference for version1
                             self.rating_system.update_ratings([(code_ids[version1], 0, 0), (code_ids[version2], 1, 1)], contest_time)
-                        elif score == 0.0:  # code2 wins
+                        elif final_score < 0.4:  # Strong preference for version2
                             self.rating_system.update_ratings([(code_ids[version2], 0, 0), (code_ids[version1], 1, 1)], contest_time)
-                        else:  # tie
+                        else:  # Close match, treat as tie
                             self.rating_system.update_ratings([(code_ids[version1], 0, 0), (code_ids[version2], 0, 0)], contest_time)
                         
-                        comparison_results.append({
-                            'comparison': f"{version1} vs {version2}",
-                            'score': score
-                        })
-                        
                         contest_time += 1
+                
+                logger.info(f"  🏆 Completed all comparisons for snippet {snippet_id}")
                 
                 # Get final ratings for all versions
                 final_ratings = {
                     version: self.rating_system.get_rating(code_ids[version])
                     for version in all_versions
                 }
+                
+                # Log final ratings for this snippet
+                logger.info(f"  📊 ELO ratings for snippet {snippet_id}:")
+                for version, rating in sorted(final_ratings.items(), key=lambda x: x[1], reverse=True):
+                    logger.info(f"    • {version}: {rating:.1f}")
                 
                 # Prepare result for this snippet
                 result = {
@@ -511,6 +567,8 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
                 
                 results.append(result)
                 successful_snippets += 1
+                
+                logger.info(f"✅ Successfully completed snippet {snippet_id} ({successful_snippets}/{total_snippets} total)")
                 
                 # Send progress update with the snippet result
                 if self.progress_callback:
@@ -548,6 +606,7 @@ IMPORTANT: Your response must contain ONLY the optimized code itself, with NO ad
                 'judge_llm_type': str(self.judge_llm_type),
                 'synthesis_llm_type': str(self.synthesis_llm_type),  # Add synthesis LLM type
                 'selected_templates': self.selected_templates,
+                'enable_reverse_comparisons': self.enable_reverse_comparisons,
                 'results': results,
                 'average_ratings': avg_ratings,
                 'statistics': {
@@ -600,6 +659,7 @@ def save_evaluation_results(results: Dict[str, Any], output_dir: str = "results"
         "generated_prompts": results.get("prompts", {}),  # Save all prompts
         "meta_prompts": results.get("meta_prompts", {}),  # Save all meta-prompts
         "selected_templates": results.get("selected_templates", []),  # Save which templates were used
+        "enable_reverse_comparisons": results.get("enable_reverse_comparisons", False),  # Save comparison setting
         "evaluation_timestamp": timestamp,
         "statistics": results.get("statistics", {
             "total_snippets": 0,
