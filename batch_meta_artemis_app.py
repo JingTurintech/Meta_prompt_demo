@@ -45,7 +45,7 @@ from meta_artemis_modules.execution import (
 )
 from meta_artemis_modules.visualization import (
     display_existing_solutions_analysis, create_performance_comparison_chart, create_summary_dashboard,
-    display_box_plot_analysis_results
+    display_box_plot_analysis_results, perform_statistical_analysis, format_statistical_results
 )
 
 # Import from existing modules
@@ -306,21 +306,8 @@ def step_2_batch_configuration():
     elif selected_use_case == "batch_analysis":
         batch_analysis_results = state.get("batch_analysis", {}).get("analysis_results")
         if batch_analysis_results:
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.success("📊 Previous analysis results found!")
-            with col2:
-                if st.button("🗑️ Clear Results", help="Clear previous results to start fresh"):
-                    # Clear the analysis results
-                    if "batch_analysis" in state:
-                        if "analysis_results" in state["batch_analysis"]:
-                            del state["batch_analysis"]["analysis_results"]
-                    st.rerun()
             st.markdown("---")
             st.markdown("### Configure New Batch Analysis")
-    
-    # Project configuration section
-    st.markdown("### 🔧 Project Configuration")
     
     # Get all project configurations
     project_configurations = get_project_configurations()
@@ -2021,14 +2008,13 @@ def display_batch_evaluation_results(evaluation_results: List[Dict[str, Any]] = 
 
 def configure_batch_analysis():
     """Configure batch runtime impact analysis"""
-    st.markdown("### 🔬 Runtime Impact Analysis Configuration")
-    
+
     state = get_batch_session_state()
     batch_config = state["batch_analysis"]
     selected_projects = state.get("selected_projects", [])
     
     if not selected_projects:
-        st.warning("⚠️ No projects selected. Please select projects in the Project Configuration section above.")
+        st.warning("⚠️ No project selected. Please select a project in the Project Configuration section above.")
         return
     
     # Analysis configuration
@@ -2038,7 +2024,7 @@ def configure_batch_analysis():
     with col1:
         analysis_type = st.selectbox(
             "Analysis Type:",
-            options=["runtime_comparison", "statistical_analysis", "template_comparison"],
+            options=["runtime_comparison", "statistical_analysis"],
             index=0,
             help="Type of analysis to perform on the runtime data"
         )
@@ -2050,6 +2036,19 @@ def configure_batch_analysis():
             value=0.05,
             step=0.01,
             help="Alpha level for statistical significance testing"
+        )
+        
+        effect_size_threshold = st.number_input(
+            "Effect Size Threshold:",
+            min_value=0.1,
+            max_value=0.8,
+            value=0.2,
+            step=0.1,
+            help="Threshold for Cohen's d effect size. Versions with effect size ≥ this value will be considered different.\n"
+                 "- Negligible: |d| < 0.2\n"
+                 "- Small: 0.2 ≤ |d| < 0.5\n"
+                 "- Medium: 0.5 ≤ |d| < 0.8\n"
+                 "- Large: |d| ≥ 0.8"
         )
     
     with col2:
@@ -2074,26 +2073,8 @@ def configure_batch_analysis():
     template_analysis = True
     construct_level = True
     
-    # Performance metrics selection
-    st.markdown("#### 📊 Performance Metrics")
-    
-    available_metrics = {
-        "runtime": "⏱️ Runtime (seconds)",
-        "memory_usage": "🧠 Memory Usage (MB)", 
-        "cpu_utilization": "⚡ CPU Utilization (%)",
-        "throughput": "🚀 Throughput (ops/sec)"
-    }
-    
-    selected_metrics = []
-    cols = st.columns(len(available_metrics))
-    for i, (metric_key, metric_label) in enumerate(available_metrics.items()):
-        with cols[i]:
-            if st.checkbox(metric_label, value=(metric_key == "runtime"), key=f"metric_{metric_key}"):
-                selected_metrics.append(metric_key)
-    
-    if not selected_metrics:
-        st.warning("⚠️ Please select at least one performance metric to analyze.")
-        return
+    # Set runtime as the only metric
+    selected_metrics = ["runtime"]
     
     # Project-specific solution analysis
     st.markdown("#### 📋 Solution Analysis Preview")
@@ -2199,6 +2180,7 @@ def configure_batch_analysis():
                 "selected_projects": selected_projects,
                 "analysis_type": analysis_type,
                 "significance_level": significance_level,
+                "effect_size_threshold": effect_size_threshold,  # Add effect size threshold to config
                 "minimum_samples": minimum_samples,
                 "include_outliers": include_outliers,
                 "include_baseline": include_baseline,
@@ -2725,14 +2707,15 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
     # Perform statistical analysis using Scott-Knott ESD test
     logger.info("🧪 Performing statistical analysis...")
     
-    # Get the significance level from config
+        # Get the analysis settings from config
     alpha = config.get("significance_level", 0.05)
+    effect_size_threshold = config.get("effect_size_threshold", 0.2)
     
     # Import statistical functions from visualization module
-    from meta_artemis_modules.visualization import perform_scott_knott_esd_test, format_statistical_results
+    from meta_artemis_modules.visualization import perform_statistical_analysis, format_statistical_results
     
     # Perform statistical tests on overall project data
-    statistical_results = perform_scott_knott_esd_test(versions_data, alpha=alpha)
+    statistical_results = perform_statistical_analysis(versions_data, alpha=alpha, effect_size_threshold=effect_size_threshold)
     
     # Format statistical results for display
     statistical_summary = format_statistical_results(statistical_results)
@@ -2748,17 +2731,17 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
             else:
                 construct_data[version] = []  # Empty list for missing data
         
-        if len([v for v in construct_data.values() if v]) >= 2:  # Need at least 2 versions with data
-            construct_stats = perform_scott_knott_esd_test(construct_data, alpha=alpha)
-            construct_statistical_results[construct_name] = construct_stats
-        else:
-            construct_statistical_results[construct_name] = {
-                "success": False,
-                "error": "Insufficient data for statistical testing",
-                "groups": {},
-                "rankings": {},
-                "p_values": {}
-            }
+            if len([v for v in construct_data.values() if v]) >= 2:  # Need at least 2 versions with data
+                construct_stats = perform_statistical_analysis(construct_data, alpha=alpha, effect_size_threshold=effect_size_threshold)
+                construct_statistical_results[construct_name] = construct_stats
+            else:
+                construct_statistical_results[construct_name] = {
+                    "success": False,
+                    "error": "Insufficient data for statistical testing",
+                    "groups": {},
+                    "rankings": {},
+                    "p_values": {}
+                }
     
     # Process version-level solutions for separate analysis
     version_level_data = process_version_level_solutions(version_level_solutions, top_ranked_constructs, project_id, evaluator)
@@ -2934,15 +2917,15 @@ def process_version_level_solutions(version_level_solutions: List[dict], top_ran
     version_level_data["scott_knott_rankings"] = {}
     if len(version_runtime_data) >= 2:
         try:
-            from meta_artemis_modules.visualization import perform_scott_knott_esd_test
-            sk_result = perform_scott_knott_esd_test(version_runtime_data, alpha=0.05)
+            from meta_artemis_modules.visualization import perform_statistical_analysis
+            sk_result = perform_statistical_analysis(version_runtime_data, alpha=0.05)
             if sk_result.get("success", False):
                 version_level_data["scott_knott_rankings"] = sk_result.get("rankings", {})
                 logger.info(f"Version-level Scott-Knott ESD rankings: {version_level_data['scott_knott_rankings']}")
             else:
                 logger.warning("Scott-Knott ESD test failed for version-level data")
         except Exception as e:
-            logger.warning(f"Scott-Knott ESD test error for version-level data: {str(e)}")
+            logger.warning(f"⚠️ Statistical analysis failed for version-level data: {str(e)}")
     
     return version_level_data
 
