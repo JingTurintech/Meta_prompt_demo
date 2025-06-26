@@ -11,3 +11,6 @@ elommr>=0.1.0
 artemis-client>=0.1.0
 falcon-models>=0.1.0
 vision-models>=0.1.0 
+scipy>=1.11.0
+pymc>=5.10.0
+arviz>=0.16.0
