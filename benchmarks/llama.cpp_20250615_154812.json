@@ -1,0 +1,303 @@
+{
+  "metadata": {
+    "collected_at": "20250615_154812",
+    "project_info": {
+      "project_id": "28334995-7488-4414-876a-fbbdd1d990f9",
+      "name": "llama.cpp",
+      "description": "This repository was selected for benchmarking based on Pull Request #6414: \"Improve cpu prompt eval speed\" (https://github.com/ggml-org/llama.cpp/pull/6414), which demonstrates significant performance improvements",
+      "language": "c"
+    }
+  },
+  "code_snippets": [
+    {
+      "id": "f678a4f2-904f-4dc7-adae-9c38d0fb1e06",
+      "content": "static inline __m256 mul_sum_us8_pairs_float(const __m256i ax, const __m256i sy) { #if defined(__AVXVNNI__) || defined(__AVX512VNNI__)     const __m256i zero = _mm256_setzero_si256();     const __m256i summed_pairs = _mm256_dpbusd_epi32(zero, ax, sy);     return _mm256_cvtepi32_ps(summed_pairs); #else     // Perform multiplication and create 16-bit values     const __m256i dot = _mm256_maddubs_epi16(ax, sy);     return sum_i16_pairs_float(dot); #endif }",
+      "construct_id": "fe78a89e-1deb-4311-bef6-b1b9592d862d",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.393826",
+        "updated_at": "2025-06-13T15:57:09.393841",
+        "language": "c",
+        "file": "ggml-quants.c",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 134,
+          "end": 144
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "e2e52c8e-971f-41fb-bcc0-f648dbafd690",
+      "content": "static inline __m256 mul_sum_us8_pairs_float(const __m256i ax, const __m256i sy) {     const __m128i axl = _mm256_castsi256_si128(ax);     const __m128i axh = _mm256_extractf128_si256(ax, 1);     const __m128i syl = _mm256_castsi256_si128(sy);     const __m128i syh = _mm256_extractf128_si256(sy, 1);     // Perform multiplication and create 16-bit values     const __m128i dotl = _mm_maddubs_epi16(axl, syl);     const __m128i doth = _mm_maddubs_epi16(axh, syh);     return sum_i16_pairs_float(doth, dotl); }",
+      "construct_id": "44c1feb0-b752-4e68-8461-b50916c7aeff",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.394659",
+        "updated_at": "2025-06-13T15:57:09.394671",
+        "language": "c",
+        "file": "ggml-quants.c",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 220,
+          "end": 229
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 2",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "4adb2db4-b37c-432f-9754-9f86f010dc04",
+      "content": "// multiply int8_t, add results pairwise twice and return as float vector static inline __m256 mul_sum_i8_pairs_float(const __m256i x, const __m256i y) { #if __AVXVNNIINT8__     const __m256i zero = _mm256_setzero_si256();     const __m256i summed_pairs = _mm256_dpbssd_epi32(zero, x, y);     return _mm256_cvtepi32_ps(summed_pairs); #else     // Get absolute values of x vectors     const __m256i ax = _mm256_sign_epi8(x, x);     // Sign the values of the y vectors     const __m256i sy = _mm256_sign_epi8(y, x);     return mul_sum_us8_pairs_float(ax, sy); #endif }",
+      "construct_id": "122b226c-1758-4a6d-bd52-0e90481a1e13",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.395408",
+        "updated_at": "2025-06-13T15:57:09.395421",
+        "language": "c",
+        "file": "ggml-quants.c",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 146,
+          "end": 159
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 3"
+        ]
+      }
+    },
+    {
+      "id": "8406fdf7-df72-4771-be05-f0cae181d41b",
+      "content": "// multiply int8_t, add results pairwise twice and return as float vector static inline __m256 mul_sum_i8_pairs_float(const __m256i x, const __m256i y) {     const __m128i xl = _mm256_castsi256_si128(x);     const __m128i xh = _mm256_extractf128_si256(x, 1);     const __m128i yl = _mm256_castsi256_si128(y);     const __m128i yh = _mm256_extractf128_si256(y, 1);     // Get absolute values of x vectors     const __m128i axl = _mm_sign_epi8(xl, xl);     const __m128i axh = _mm_sign_epi8(xh, xh);     // Sign the values of the y vectors     const __m128i syl = _mm_sign_epi8(yl, xl);     const __m128i syh = _mm_sign_epi8(yh, xh);     // Perform multiplication and create 16-bit values     const __m128i dotl = _mm_maddubs_epi16(axl, syl);     const __m128i doth = _mm_maddubs_epi16(axh, syh);     return sum_i16_pairs_float(doth, dotl); }",
+      "construct_id": "db44c095-a8ba-445d-8877-c73d7365a6c2",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.396222",
+        "updated_at": "2025-06-13T15:57:09.396236",
+        "language": "c",
+        "file": "ggml-quants.c",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 231,
+          "end": 247
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 4",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "5e7b01b0-782c-4023-8812-4c5f2d858276",
+      "content": "static void ggml_vec_dot_f16(int n, float * restrict s, size_t bs, ggml_fp16_t * restrict x, size_t bx, ggml_fp16_t * restrict y, size_t by, int nrc) {     assert(nrc == 1);     UNUSED(nrc);     UNUSED(bx);     UNUSED(by);     UNUSED(bs);      ggml_float sumf = 0.0;  #if defined(GGML_SIMD)     const int np = (n & ~(GGML_F16_STEP - 1));      GGML_F16_VEC sum[GGML_F16_ARR] = { GGML_F16_VEC_ZERO };      GGML_F16_VEC ax[GGML_F16_ARR];     GGML_F16_VEC ay[GGML_F16_ARR];      for (int i = 0; i < np; i += GGML_F16_STEP) {         for (int j = 0; j < GGML_F16_ARR; j++) {             ax[j] = GGML_F16_VEC_LOAD(x + i + j*GGML_F16_EPR, j);             ay[j] = GGML_F16_VEC_LOAD(y + i + j*GGML_F16_EPR, j);              sum[j] = GGML_F16_VEC_FMA(sum[j], ax[j], ay[j]);         }     }      // reduce sum0..sum3 to sum0     GGML_F16_VEC_REDUCE(sumf, sum);      // leftovers     for (int i = np; i < n; ++i) {         sumf += (ggml_float)(GGML_FP16_TO_FP32(x[i])*GGML_FP16_TO_FP32(y[i]));     } #else     for (int i = 0; i < n; ++i) {         sumf += (ggml_float)(GGML_FP16_TO_FP32(x[i])*GGML_FP16_TO_FP32(y[i]));     } #endif      *s = sumf; }",
+      "construct_id": "9f3bcf92-c77c-49f8-816b-20bf48442d3a",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.397132",
+        "updated_at": "2025-06-13T15:57:09.397154",
+        "language": "c",
+        "file": "ggml.c",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 1544,
+          "end": 1584
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 5"
+        ]
+      }
+    },
+    {
+      "id": "cc803027-f179-4790-8ab9-29008f5da4d9",
+      "content": "void ggml_vec_dot_q4_0_q8_0(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {     const int qk = QK8_0;     const int nb = n / qk;      assert(n % qk == 0); #if defined(__ARM_FEATURE_MATMUL_INT8)     assert((nrc == 2) || (nrc == 1)); #else     assert(nrc == 1); #endif     UNUSED(nrc);     UNUSED(bx);     UNUSED(by);     UNUSED(bs);      const block_q4_0 * restrict x = vx;     const block_q8_0 * restrict y = vy;  #if defined(__ARM_FEATURE_MATMUL_INT8)     if (nrc == 2) {         const block_q4_0 * restrict vx0 = vx;         const block_q4_0 * restrict vx1 = vx + bx;          const block_q8_0 * restrict vy0 = vy;         const block_q8_0 * restrict vy1 = vy + by;          float32x4_t sumv0 = vdupq_n_f32(0.0f);          for (int i = 0; i < nb; i++) {             const block_q4_0 * restrict b_x0 = &vx0[i];             const block_q4_0 * restrict b_x1 = &vx1[i];             const block_q8_0 * restrict b_y0 = &vy0[i];             const block_q8_0 * restrict b_y1 = &vy1[i];              const uint8x16_t m4b = vdupq_n_u8(0x0F);             const int8x16_t  s8b = vdupq_n_s8(0x8);              const uint8x16_t v0_0 = vld1q_u8(b_x0->qs);             const uint8x16_t v0_1 = vld1q_u8(b_x1->qs);              // 4-bit -> 8-bit             const int8x16_t v0_0l = vreinterpretq_s8_u8(vandq_u8  (v0_0, m4b));             const int8x16_t v0_0h = vreinterpretq_s8_u8(vshrq_n_u8(v0_0, 4));             const int8x16_t v0_1l = vreinterpretq_s8_u8(vandq_u8  (v0_1, m4b));             const int8x16_t v0_1h = vreinterpretq_s8_u8(vshrq_n_u8(v0_1, 4));              // sub 8             const int8x16_t x0_l = vsubq_s8(v0_0l, s8b);             const int8x16_t x0_h = vsubq_s8(v0_0h, s8b);             const int8x16_t x1_l = vsubq_s8(v0_1l, s8b);             const int8x16_t x1_h = vsubq_s8(v0_1h, s8b);              // load y             const int8x16_t y0_l = vld1q_s8(b_y0->qs);             const int8x16_t y0_h = vld1q_s8(b_y0->qs + 16);             const int8x16_t y1_l = vld1q_s8(b_y1->qs);             const int8x16_t y1_h = vld1q_s8(b_y1->qs + 16);              float32x4_t scale = {GGML_FP16_TO_FP32(b_x0->d)*GGML_FP16_TO_FP32(b_y0->d),                                  GGML_FP16_TO_FP32(b_x0->d)*GGML_FP16_TO_FP32(b_y1->d),                                  GGML_FP16_TO_FP32(b_x1->d)*GGML_FP16_TO_FP32(b_y0->d),                                  GGML_FP16_TO_FP32(b_x1->d)*GGML_FP16_TO_FP32(b_y1->d)};              int8x16_t l0 = vreinterpretq_s8_s64(vzip1q_s64(vreinterpretq_s64_s8(x0_l), vreinterpretq_s64_s8(x1_l)));             int8x16_t l1 = vreinterpretq_s8_s64(vzip2q_s64(vreinterpretq_s64_s8(x0_l), vreinterpretq_s64_s8(x1_l)));              int8x16_t l2 = vreinterpretq_s8_s64(vzip1q_s64(vreinterpretq_s64_s8(x0_h), vreinterpretq_s64_s8(x1_h)));             int8x16_t l3 = vreinterpretq_s8_s64(vzip2q_s64(vreinterpretq_s64_s8(x0_h), vreinterpretq_s64_s8(x1_h)));              int8x16_t r0 = vreinterpretq_s8_s64(vzip1q_s64(vreinterpretq_s64_s8(y0_l), vreinterpretq_s64_s8(y1_l)));             int8x16_t r1 = vreinterpretq_s8_s64(vzip2q_s64(vreinterpretq_s64_s8(y0_l), vreinterpretq_s64_s8(y1_l)));              int8x16_t r2 = vreinterpretq_s8_s64(vzip1q_s64(vreinterpretq_s64_s8(y0_h), vreinterpretq_s64_s8(y1_h)));             int8x16_t r3 = vreinterpretq_s8_s64(vzip2q_s64(vreinterpretq_s64_s8(y0_h), vreinterpretq_s64_s8(y1_h)));              sumv0 = vmlaq_f32(sumv0,(vcvtq_f32_s32(vmmlaq_s32((vmmlaq_s32((vmmlaq_s32((vmmlaq_s32(vdupq_n_s32(0), l0, r0)),                                                                                 l1, r1)), l2, r2)), l3, r3))), scale);         }         float32x4_t sumv1 = vextq_f32(sumv0, sumv0, 2);         float32x4_t sumv2 = vzip1q_f32(sumv0, sumv1);          vst1_f32(s, vget_low_f32(sumv2));         vst1_f32(s + bs, vget_high_f32(sumv2));         return;     } #endif #if defined(__ARM_NEON)     float32x4_t sumv0 = vdupq_n_f32(0.0f);     float32x4_t sumv1 = vdupq_n_f32(0.0f);      assert(nb % 2 == 0); // TODO: handle odd nb      for (int i = 0; i < nb; i += 2) {         const block_q4_0 * restrict x0 = &x[i + 0];         const block_q4_0 * restrict x1 = &x[i + 1];         const block_q8_0 * restrict y0 = &y[i + 0];         const block_q8_0 * restrict y1 = &y[i + 1];          const uint8x16_t m4b = vdupq_n_u8(0x0F);         const int8x16_t  s8b = vdupq_n_s8(0x8);          const uint8x16_t v0_0 = vld1q_u8(x0->qs);         const uint8x16_t v0_1 = vld1q_u8(x1->qs);          // 4-bit -> 8-bit         const int8x16_t v0_0l = vreinterpretq_s8_u8(vandq_u8  (v0_0, m4b));         const int8x16_t v0_0h = vreinterpretq_s8_u8(vshrq_n_u8(v0_0, 4));         const int8x16_t v0_1l = vreinterpretq_s8_u8(vandq_u8  (v0_1, m4b));         const int8x16_t v0_1h = vreinterpretq_s8_u8(vshrq_n_u8(v0_1, 4));          // sub 8         const int8x16_t v0_0ls = vsubq_s8(v0_0l, s8b);         const int8x16_t v0_0hs = vsubq_s8(v0_0h, s8b);         const int8x16_t v0_1ls = vsubq_s8(v0_1l, s8b);         const int8x16_t v0_1hs = vsubq_s8(v0_1h, s8b);          // load y         const int8x16_t v1_0l = vld1q_s8(y0->qs);         const int8x16_t v1_0h = vld1q_s8(y0->qs + 16);         const int8x16_t v1_1l = vld1q_s8(y1->qs);         const int8x16_t v1_1h = vld1q_s8(y1->qs + 16);          // dot product into int32x4_t         const int32x4_t p_0 = ggml_vdotq_s32(ggml_vdotq_s32(vdupq_n_s32(0), v0_0ls, v1_0l), v0_0hs, v1_0h);         const int32x4_t p_1 = ggml_vdotq_s32(ggml_vdotq_s32(vdupq_n_s32(0), v0_1ls, v1_1l), v0_1hs, v1_1h);          sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p_0), GGML_FP16_TO_FP32(x0->d)*GGML_FP16_TO_FP32(y0->d));         sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(p_1), GGML_FP16_TO_FP32(x1->d)*GGML_FP16_TO_FP32(y1->d));     }      *s = vaddvq_f32(sumv0) + vaddvq_f32(sumv1); #elif defined(__AVX2__)     // Initialize accumulator with zeros     __m256 acc = _mm256_setzero_ps();      // Main loop     for (int i = 0; i < nb; ++i) {         /* Compute combined scale for the block */         const __m256 d = _mm256_set1_ps( GGML_FP16_TO_FP32(x[i].d) * GGML_FP16_TO_FP32(y[i].d) );          __m256i qx = bytes_from_nibbles_32(x[i].qs);          // Now we have a vector with bytes in [ 0 .. 15 ] interval. Offset them into [ -8 .. +7 ] interval.         const __m256i off = _mm256_set1_epi8( 8 );         qx = _mm256_sub_epi8( qx, off );          __m256i qy = _mm256_loadu_si256((const __m256i *)y[i].qs);          const __m256 q = mul_sum_i8_pairs_float(qx, qy);          /* Multiply q with scale and accumulate */         acc = _mm256_fmadd_ps( d, q, acc );     }      *s = hsum_float_8(acc); #elif defined(__AVX__)     // Initialize accumulator with zeros     __m256 acc = _mm256_setzero_ps();      // Main loop     for (int i = 0; i < nb; ++i) {         // Compute combined scale for the block         const __m256 d = _mm256_set1_ps( GGML_FP16_TO_FP32(x[i].d) * GGML_FP16_TO_FP32(y[i].d) );          const __m128i lowMask = _mm_set1_epi8(0xF);         const __m128i off = _mm_set1_epi8(8);          const __m128i tmp = _mm_loadu_si128((const __m128i *)x[i].qs);          __m128i bx_0 = _mm_and_si128(lowMask, tmp);         __m128i by_0 = _mm_loadu_si128((const __m128i *)y[i].qs);         bx_0 = _mm_sub_epi8(bx_0, off);         const __m128i i32_0 = mul_sum_i8_pairs(bx_0, by_0);          bx_0 = _mm_and_si128(lowMask, _mm_srli_epi64(tmp, 4));         by_0 = _mm_loadu_si128((const __m128i *)(y[i].qs + 16));         bx_0 = _mm_sub_epi8(bx_0, off);         const __m128i i32_1 = mul_sum_i8_pairs(bx_0, by_0);          // Convert int32_t to float         __m256 p = _mm256_cvtepi32_ps(MM256_SET_M128I(i32_0, i32_1));          // Apply the scale, and accumulate         acc = _mm256_add_ps(_mm256_mul_ps( d, p ), acc);     }      *s = hsum_float_8(acc); #elif defined(__SSSE3__)     // set constants     const __m128i lowMask = _mm_set1_epi8(0xF);     const __m128i off = _mm_set1_epi8(8);      // Initialize accumulator with zeros     __m128 acc_0 = _mm_setzero_ps();     __m128 acc_1 = _mm_setzero_ps();     __m128 acc_2 = _mm_setzero_ps();     __m128 acc_3 = _mm_setzero_ps();      // First round without accumulation     {         _mm_prefetch(&x[0] + sizeof(block_q4_0), _MM_HINT_T0);         _mm_prefetch(&y[0] + sizeof(block_q8_0), _MM_HINT_T0);          // Compute combined scale for the block 0 and 1         const __m128 d_0_1 = _mm_set1_ps( GGML_FP16_TO_FP32(x[0].d) * GGML_FP16_TO_FP32(y[0].d) );          const __m128i tmp_0_1 = _mm_loadu_si128((const __m128i *)x[0].qs);          __m128i bx_0 = _mm_and_si128(lowMask, tmp_0_1);         __m128i by_0 = _mm_loadu_si128((const __m128i *)y[0].qs);         bx_0 = _mm_sub_epi8(bx_0, off);         const __m128i i32_0 = mul_sum_i8_pairs(bx_0, by_0);          __m128i bx_1 = _mm_and_si128(lowMask, _mm_srli_epi64(tmp_0_1, 4));         __m128i by_1 = _mm_loadu_si128((const __m128i *)(y[0].qs + 16));         bx_1 = _mm_sub_epi8(bx_1, off);         const __m128i i32_1 = mul_sum_i8_pairs(bx_1, by_1);          _mm_prefetch(&x[1] + sizeof(block_q4_0), _MM_HINT_T0);         _mm_prefetch(&y[1] + sizeof(block_q8_0), _MM_HINT_T0);          // Compute combined scale for the block 2 and 3         const __m128 d_2_3 = _mm_set1_ps( GGML_FP16_TO_FP32(x[1].d) * GGML_FP16_TO_FP32(y[1].d) );          const __m128i tmp_2_3 = _mm_loadu_si128((const __m128i *)x[1].qs);          __m128i bx_2 = _mm_and_si128(lowMask, tmp_2_3);         __m128i by_2 = _mm_loadu_si128((const __m128i *)y[1].qs);         bx_2 = _mm_sub_epi8(bx_2, off);         const __m128i i32_2 = mul_sum_i8_pairs(bx_2, by_2);          __m128i bx_3 = _mm_and_si128(lowMask, _mm_srli_epi64(tmp_2_3, 4));         __m128i by_3 = _mm_loadu_si128((const __m128i *)(y[1].qs + 16));         bx_3 = _mm_sub_epi8(bx_3, off);         const __m128i i32_3 = mul_sum_i8_pairs(bx_3, by_3);          // Convert int32_t to float         __m128 p0 = _mm_cvtepi32_ps(i32_0);         __m128 p1 = _mm_cvtepi32_ps(i32_1);         __m128 p2 = _mm_cvtepi32_ps(i32_2);         __m128 p3 = _mm_cvtepi32_ps(i32_3);          // Apply the scale         acc_0 = _mm_mul_ps( d_0_1, p0 );         acc_1 = _mm_mul_ps( d_0_1, p1 );         acc_2 = _mm_mul_ps( d_2_3, p2 );         acc_3 = _mm_mul_ps( d_2_3, p3 );     }      assert(nb % 2 == 0); // TODO: handle odd nb      // Main loop     for (int i = 2; i < nb; i+=2) {         _mm_prefetch(&x[i] + sizeof(block_q4_0), _MM_HINT_T0);         _mm_prefetch(&y[i] + sizeof(block_q8_0), _MM_HINT_T0);          // Compute combined scale for the block 0 and 1         const __m128 d_0_1 = _mm_set1_ps( GGML_FP16_TO_FP32(x[i].d) * GGML_FP16_TO_FP32(y[i].d) );          const __m128i tmp_0_1 = _mm_loadu_si128((const __m128i *)x[i].qs);          __m128i bx_0 = _mm_and_si128(lowMask, tmp_0_1);         __m128i by_0 = _mm_loadu_si128((const __m128i *)y[i].qs);         bx_0 = _mm_sub_epi8(bx_0, off);         const __m128i i32_0 = mul_sum_i8_pairs(bx_0, by_0);          __m128i bx_1 = _mm_and_si128(lowMask, _mm_srli_epi64(tmp_0_1, 4));         __m128i by_1 = _mm_loadu_si128((const __m128i *)(y[i].qs + 16));         bx_1 = _mm_sub_epi8(bx_1, off);         const __m128i i32_1 = mul_sum_i8_pairs(bx_1, by_1);          _mm_prefetch(&x[i] + 2 * sizeof(block_q4_0), _MM_HINT_T0);         _mm_prefetch(&y[i] + 2 * sizeof(block_q8_0), _MM_HINT_T0);          // Compute combined scale for the block 2 and 3         const __m128 d_2_3 = _mm_set1_ps( GGML_FP16_TO_FP32(x[i + 1].d) * GGML_FP16_TO_FP32(y[i + 1].d) );          const __m128i tmp_2_3 = _mm_loadu_si128((const __m128i *)x[i + 1].qs);          __m128i bx_2 = _mm_and_si128(lowMask, tmp_2_3);         __m128i by_2 = _mm_loadu_si128((const __m128i *)y[i + 1].qs);         bx_2 = _mm_sub_epi8(bx_2, off);         const __m128i i32_2 = mul_sum_i8_pairs(bx_2, by_2);          __m128i bx_3 = _mm_and_si128(lowMask, _mm_srli_epi64(tmp_2_3, 4));         __m128i by_3 = _mm_loadu_si128((const __m128i *)(y[i + 1].qs + 16));         bx_3 = _mm_sub_epi8(bx_3, off);         const __m128i i32_3 = mul_sum_i8_pairs(bx_3, by_3);          // Convert int32_t to float         __m128 p0 = _mm_cvtepi32_ps(i32_0);         __m128 p1 = _mm_cvtepi32_ps(i32_1);         __m128 p2 = _mm_cvtepi32_ps(i32_2);         __m128 p3 = _mm_cvtepi32_ps(i32_3);          // Apply the scale         __m128 p0_d = _mm_mul_ps( d_0_1, p0 );         __m128 p1_d = _mm_mul_ps( d_0_1, p1 );         __m128 p2_d = _mm_mul_ps( d_2_3, p2 );         __m128 p3_d = _mm_mul_ps( d_2_3, p3 );          // Acummulate         acc_0 = _mm_add_ps(p0_d, acc_0);         acc_1 = _mm_add_ps(p1_d, acc_1);         acc_2 = _mm_add_ps(p2_d, acc_2);         acc_3 = _mm_add_ps(p3_d, acc_3);     }      *s = hsum_float_4x4(acc_0, acc_1, acc_2, acc_3); #elif defined(__riscv_v_intrinsic)     float sumf = 0.0;      size_t vl = __riscv_vsetvl_e8m1(qk/2);      for (int i = 0; i < nb; i++) {         // load elements         vuint8mf2_t tx = __riscv_vle8_v_u8mf2(x[i].qs, vl);          vint8mf2_t y0 = __riscv_vle8_v_i8mf2(y[i].qs, vl);         vint8mf2_t y1 = __riscv_vle8_v_i8mf2(y[i].qs+16, vl);          // mask and store lower part of x, and then upper part         vuint8mf2_t x_a = __riscv_vand_vx_u8mf2(tx, 0x0F, vl);         vuint8mf2_t x_l = __riscv_vsrl_vx_u8mf2(tx, 0x04, vl);          vint8mf2_t x_ai = __riscv_vreinterpret_v_u8mf2_i8mf2(x_a);         vint8mf2_t x_li = __riscv_vreinterpret_v_u8mf2_i8mf2(x_l);          // subtract offset         vint8mf2_t v0 = __riscv_vsub_vx_i8mf2(x_ai, 8, vl);         vint8mf2_t v1 = __riscv_vsub_vx_i8mf2(x_li, 8, vl);          vint16m1_t vec_mul1 = __riscv_vwmul_vv_i16m1(v0, y0, vl);         vint16m1_t vec_mul2 = __riscv_vwmul_vv_i16m1(v1, y1, vl);          vint32m1_t vec_zero = __riscv_vmv_v_x_i32m1(0, vl);          vint32m1_t vs1 = __riscv_vwredsum_vs_i16m1_i32m1(vec_mul1, vec_zero, vl);         vint32m1_t vs2 = __riscv_vwredsum_vs_i16m1_i32m1(vec_mul2, vs1, vl);          int sumi = __riscv_vmv_x_s_i32m1_i32(vs2);          sumf += sumi*GGML_FP16_TO_FP32(x[i].d)*GGML_FP16_TO_FP32(y[i].d);     }      *s = sumf; #else     // scalar     float sumf = 0.0;      for (int i = 0; i < nb; i++) {         int sumi = 0;          for (int j = 0; j < qk/2; ++j) {             const int v0 = (x[i].qs[j] & 0x0F) - 8;             const int v1 = (x[i].qs[j] >>   4) - 8;              sumi += (v0 * y[i].qs[j]) + (v1 * y[i].qs[j + qk/2]);         }          sumf += sumi*GGML_FP16_TO_FP32(x[i].d)*GGML_FP16_TO_FP32(y[i].d);     }      *s = sumf; #endif }",
+      "construct_id": "131b86ba-ae86-4dbf-aba7-005c0581b261",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.398808",
+        "updated_at": "2025-06-13T15:57:09.398821",
+        "language": "c",
+        "file": "ggml-quants.c",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 3684,
+          "end": 4049
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 6"
+        ]
+      }
+    },
+    {
+      "id": "952927d4-712a-47cb-8546-28d7dbc95654",
+      "content": "static void ggml_graph_compute_thread_sync_task(int * task_phase, struct ggml_compute_state * state, const bool do_yield) {     // wait for other threads to finish     const int last_task_phase = * task_phase;      while (true) {         if (do_yield) {             sched_yield();         }          * task_phase = atomic_load(&state->shared->node_task);         if (* task_phase != last_task_phase) break;     } }",
+      "construct_id": "14871d08-9602-4c14-8513-8fb08f981c80",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.399706",
+        "updated_at": "2025-06-13T15:57:09.399719",
+        "language": "c",
+        "file": "ggml.c",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 18229,
+          "end": 18241
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 7"
+        ]
+      }
+    },
+    {
+      "id": "431f0bf9-071d-43a9-9f70-b7bd7b875bde",
+      "content": "static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads, int n_cur_threads) {     int n_tasks = 0;      if (ggml_is_empty(node)) {         // no need to multi-thread a no-op         n_tasks = 1;         return n_tasks;     }      switch (node->op) {         case GGML_OP_CPY:         case GGML_OP_DUP:         case GGML_OP_ADD:         case GGML_OP_ADD1:         case GGML_OP_ACC:             {                 n_tasks = n_threads;             } break;         case GGML_OP_SUB:         case GGML_OP_SQR:         case GGML_OP_SQRT:         case GGML_OP_LOG:         case GGML_OP_SUM:         case GGML_OP_SUM_ROWS:         case GGML_OP_MEAN:         case GGML_OP_ARGMAX:         case GGML_OP_REPEAT:         case GGML_OP_REPEAT_BACK:         case GGML_OP_LEAKY_RELU:             {                 n_tasks = 1;             } break;         case GGML_OP_UNARY:             switch (ggml_get_unary_op(node)) {                 case GGML_UNARY_OP_ABS:                 case GGML_UNARY_OP_SGN:                 case GGML_UNARY_OP_NEG:                 case GGML_UNARY_OP_STEP:                 case GGML_UNARY_OP_TANH:                 case GGML_UNARY_OP_ELU:                 case GGML_UNARY_OP_RELU:                 case GGML_UNARY_OP_HARDSWISH: // to opt for multiple threads                 case GGML_UNARY_OP_HARDSIGMOID: // to opt for multiple threads                     {                         n_tasks = 1;                     } break;                  case GGML_UNARY_OP_GELU:                 case GGML_UNARY_OP_GELU_QUICK:                 case GGML_UNARY_OP_SILU:                     {                         n_tasks = n_threads;                     } break;                 default:                     GGML_ASSERT(false);             }             break;         case GGML_OP_SILU_BACK:         case GGML_OP_MUL:         case GGML_OP_DIV:         case GGML_OP_NORM:         case GGML_OP_RMS_NORM:         case GGML_OP_RMS_NORM_BACK:         case GGML_OP_GROUP_NORM:         case GGML_OP_CONCAT:             {                 n_tasks = n_threads;             } break;         case GGML_OP_MUL_MAT:             {                 n_tasks = n_threads;                  // TODO: use different scheduling for different matrix sizes                 //const int nr0 = ggml_nrows(node->src[0]);                 //const int nr1 = ggml_nrows(node->src[1]);                  //n_tasks = MIN(n_threads, MAX(1, nr0/128));                 //printf(\"nr0 = %8d, nr1 = %8d, nr0*nr1 = %8d, n_tasks%d\\n\", nr0, nr1, nr0*nr1, n_tasks);             } break;         case GGML_OP_MUL_MAT_ID:             {                 n_tasks = n_threads;             } break;         case GGML_OP_OUT_PROD:             {                 n_tasks = n_threads;             } break;         case GGML_OP_GET_ROWS:             {                 // FIXME: the cost of launching additional threads decreases performance with GPU offloading                 //n_tasks = MIN(n_threads, ggml_nelements(node->src[1]));                 n_tasks = MIN(n_cur_threads, ggml_nelements(node->src[1]));             } break;         case GGML_OP_SCALE:         case GGML_OP_SET:         case GGML_OP_CONT:         case GGML_OP_RESHAPE:         case GGML_OP_VIEW:         case GGML_OP_PERMUTE:         case GGML_OP_TRANSPOSE:         case GGML_OP_GET_ROWS_BACK:         case GGML_OP_DIAG:             {                 n_tasks = 1;             } break;         case GGML_OP_DIAG_MASK_ZERO:         case GGML_OP_DIAG_MASK_INF:         case GGML_OP_SOFT_MAX_BACK:         case GGML_OP_ROPE:         case GGML_OP_ROPE_BACK:         case GGML_OP_ADD_REL_POS:             {                 n_tasks = n_threads;             } break;         case GGML_OP_ALIBI:             {                 n_tasks = 1; //TODO             } break;         case GGML_OP_CLAMP:             {                 n_tasks = 1; //TODO             } break;         case GGML_OP_SOFT_MAX:             {                 n_tasks = MIN(n_threads, ggml_nrows(node->src[0]));             } break;         case GGML_OP_CONV_TRANSPOSE_1D:             {                 n_tasks = n_threads;             } break;         case GGML_OP_IM2COL:             {                 n_tasks = n_threads;             } break;         case GGML_OP_CONV_TRANSPOSE_2D:             {                 n_tasks = n_threads;             } break;         case GGML_OP_POOL_1D:         case GGML_OP_POOL_2D:             {                 n_tasks = 1;             } break;         case GGML_OP_UPSCALE:             {                 n_tasks = n_threads;             } break;         case GGML_OP_PAD:             {                 n_tasks = n_threads;             } break;         case GGML_OP_ARANGE:             {                 n_tasks = n_threads;             } break;         case GGML_OP_TIMESTEP_EMBEDDING:             {                 n_tasks = n_threads;             } break;         case GGML_OP_ARGSORT:             {                 n_tasks = n_threads;             } break;         case GGML_OP_FLASH_ATTN:             {                 n_tasks = n_threads;             } break;         case GGML_OP_FLASH_FF:             {                 n_tasks = n_threads;             } break;         case GGML_OP_FLASH_ATTN_BACK:             {                 n_tasks = n_threads;             } break;         case GGML_OP_SSM_CONV:         case GGML_OP_SSM_SCAN:             {                 n_tasks = n_threads;             } break;         case GGML_OP_WIN_PART:         case GGML_OP_WIN_UNPART:         case GGML_OP_GET_REL_POS:         case GGML_OP_MAP_UNARY:         case GGML_OP_MAP_BINARY:         case GGML_OP_MAP_CUSTOM1_F32:         case GGML_OP_MAP_CUSTOM2_F32:         case GGML_OP_MAP_CUSTOM3_F32:             {                 n_tasks = 1;             } break;         case GGML_OP_MAP_CUSTOM1:             {                 struct ggml_map_custom1_op_params p;                 memcpy(&p, node->op_params, sizeof(p));                 if (p.n_tasks == GGML_N_TASKS_MAX) {                     n_tasks = n_threads;                 } else {                     n_tasks = MIN(p.n_tasks, n_threads);                 }             } break;         case GGML_OP_MAP_CUSTOM2:             {                 struct ggml_map_custom2_op_params p;                 memcpy(&p, node->op_params, sizeof(p));                 if (p.n_tasks == GGML_N_TASKS_MAX) {                     n_tasks = n_threads;                 } else {                     n_tasks = MIN(p.n_tasks, n_threads);                 }             } break;         case GGML_OP_MAP_CUSTOM3:             {                 struct ggml_map_custom3_op_params p;                 memcpy(&p, node->op_params, sizeof(p));                 if (p.n_tasks == GGML_N_TASKS_MAX) {                     n_tasks = n_threads;                 } else {                     n_tasks = MIN(p.n_tasks, n_threads);                 }             } break;         case GGML_OP_CROSS_ENTROPY_LOSS:             {                 n_tasks = n_threads;             } break;         case GGML_OP_CROSS_ENTROPY_LOSS_BACK:             {                 n_tasks = n_threads;             } break;         case GGML_OP_NONE:             {                 n_tasks = 1;             } break;         case GGML_OP_COUNT:             {                 GGML_ASSERT(false);             } break;         default:             {                 fprintf(stderr, \"%s: op not implemented: \", __func__);                 if (node->op < GGML_OP_COUNT) {                     fprintf(stderr, \"%s\\n\", ggml_op_name(node->op));                 } else {                     fprintf(stderr, \"%d\\n\", node->op);                 }                 GGML_ASSERT(false);             } break;     }      assert(n_tasks > 0);      return n_tasks; }",
+      "construct_id": "150b523b-daee-4558-a717-ffdb9542b849",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.400715",
+        "updated_at": "2025-06-13T15:57:09.400727",
+        "language": "c",
+        "file": "ggml.c",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 17961,
+          "end": 18213
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 8",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    },
+    {
+      "id": "82416fdd-d2ef-4982-ad24-d74cc2f4747a",
+      "content": "static void ggml_compute_forward_mul_mat(         const struct ggml_compute_params * params,               struct ggml_tensor * dst) {      const struct ggml_tensor * src0 = dst->src[0];     const struct ggml_tensor * src1 = dst->src[1];      int64_t t0 = ggml_perf_time_us();     UNUSED(t0);      GGML_TENSOR_BINARY_OP_LOCALS      const int ith = params->ith;     const int nth = params->nth;      const enum ggml_type type = src0->type;      const bool src1_cont = ggml_is_contiguous(src1);      ggml_vec_dot_t    const vec_dot               = type_traits[type].vec_dot;     enum ggml_type    const vec_dot_type          = type_traits[type].vec_dot_type;     ggml_from_float_t const from_float_to_vec_dot = type_traits[vec_dot_type].from_float;     int64_t           const vec_dot_num_rows      = type_traits[type].nrows;      GGML_ASSERT(ne0 == ne01);     GGML_ASSERT(ne1 == ne11);     GGML_ASSERT(ne2 == ne12);     GGML_ASSERT(ne3 == ne13);      // we don't support permuted src0 or src1     GGML_ASSERT(nb00 == ggml_type_size(type));     GGML_ASSERT(nb10 == ggml_type_size(src1->type));      // dst cannot be transposed or permuted     GGML_ASSERT(nb0 == sizeof(float));     GGML_ASSERT(nb0 <= nb1);     GGML_ASSERT(nb1 <= nb2);     GGML_ASSERT(nb2 <= nb3);      // broadcast factors     const int64_t r2 = ne12/ne02;     const int64_t r3 = ne13/ne03;      // nb01 >= nb00 - src0 is not transposed     //   compute by src0 rows  #if defined(GGML_USE_CLBLAST)     if (ggml_cl_can_mul_mat(src0, src1, dst)) {         if (params->ith == 0 && params->type == GGML_TASK_TYPE_COMPUTE) {             ggml_cl_mul_mat(src0, src1, dst, params->wdata, params->wsize);         }         return;     } #endif  #if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS)     if (ggml_compute_forward_mul_mat_use_blas(dst)) {         const int64_t ne_plane      = ne01*ne00;         const size_t  desired_wsize = ne13*ne12*ne_plane*sizeof(float);         UNUSED(desired_wsize);          if (params->type == GGML_TASK_TYPE_INIT) {             if (type != GGML_TYPE_F32) {                 assert(params->wsize >= desired_wsize);                 // parallelize by src0 rows                 for (int64_t i13 = 0; i13 < ne13; i13++) {                     for (int64_t i12 = 0; i12 < ne12; i12++) {                         // broadcast src0 into src1 across 2nd,3rd dimension                         const int64_t i03 = i13/r3;                         const int64_t i02 = i12/r2;                          const void           *       x        = (char *)  src0->data    + i02*nb02          + i03*nb03;                               float          * const wdata    = (float *) params->wdata + i13*ne12*ne_plane + i12*ne_plane;                               ggml_to_float_t  const to_float = type_traits[type].to_float;                          for (int64_t i01 = ith; i01 < ne01; i01 += nth) {                             to_float((const char *) x + i01*nb01, wdata + i01*ne00, ne00);                         }                     }                 }             }             return;         }          if (params->type == GGML_TASK_TYPE_FINALIZE) {             return;         }          // perform sgemm, parallelization controlled by blas lib         if (ith != 0) {             return;         }          //const int64_t tgemm0 = ggml_perf_time_us();         for (int64_t i13 = 0; i13 < ne13; i13++) {             for (int64_t i12 = 0; i12 < ne12; i12++) {                 const int64_t i03 = i13/r3;                 const int64_t i02 = i12/r2;                  const void  * x = (char *)            src0->data + i02*nb02 + i03*nb03;                 const float * y = (float *) ((char *) src1->data + i12*nb12 + i13*nb13);                       float * d = (float *) ((char *)  dst->data + i12*nb2  + i13*nb3);                  if (type != GGML_TYPE_F32) {                     x = (float *) params->wdata + i13*ne12*ne_plane + i12*ne_plane;                 }                  cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,                           ne1, ne01, ne10,                          1.0f,    y, ne10,                                   x, ne00,                          0.0f,    d, ne01);             }         }         //printf(\"cblas_sgemm = %.3f ms, %lld flops\\n\", (ggml_perf_time_us() - tgemm0)/1000.0, ne13*ne12*ne1*ne01*ne10*2);          //printf(\"CBLAS = %f ms, %d x %d x %d x %d\\n\", (ggml_perf_time_us() - t0)/1000.0, ne0, ne1, ne2, ne3);          return;     } #endif      if (params->type == GGML_TASK_TYPE_INIT) {         if (ith != 0) {             return;         }         if (src1->type != vec_dot_type) {             char * wdata = params->wdata;             const size_t row_size = ggml_row_size(vec_dot_type, ne10);              assert(params->wsize >= ne11*ne12*ne13*row_size);             GGML_ASSERT(src1->type == GGML_TYPE_F32);              for (int64_t i13 = 0; i13 < ne13; ++i13) {                 for (int64_t i12 = 0; i12 < ne12; ++i12) {                     for (int64_t i11 = 0; i11 < ne11; ++i11) {                         from_float_to_vec_dot((float *)((char *) src1->data + i13*nb13 + i12*nb12 + i11*nb11), (void *) wdata, ne10);                         wdata += row_size;                     }                 }             }         }          return;     }      if (params->type == GGML_TASK_TYPE_FINALIZE) {         return;     }      const void * wdata    = (src1->type == vec_dot_type) ? src1->data : params->wdata;     const size_t row_size = ggml_row_size(vec_dot_type, ne10);      const int64_t nr0 = ne01;          // src0 rows     const int64_t nr1 = ne1*ne12*ne13; // src1 rows      //printf(\"nr0 = %lld, nr1 = %lld\\n\", nr0, nr1);      // distribute the thread work across the inner or outer loop based on which one is larger      const int64_t nth0 = nr0 > nr1 ? nth : 1; // parallelize by src0 rows     const int64_t nth1 = nr0 > nr1 ? 1 : nth; // parallelize by src1 rows      const int64_t ith0 = ith % nth0;     const int64_t ith1 = ith / nth0;      const int64_t dr0 = (nr0 + nth0 - 1)/nth0;     const int64_t dr1 = (nr1 + nth1 - 1)/nth1;      const int64_t ir010 = dr0*ith0;     const int64_t ir011 = MIN(ir010 + dr0, nr0);      const int64_t ir110 = dr1*ith1;     const int64_t ir111 = MIN(ir110 + dr1, nr1);      //printf(\"ir010 = %6lld, ir011 = %6lld, ir110 = %6lld, ir111 = %6lld\\n\", ir010, ir011, ir110, ir111);      // threads with no work simply yield (not sure if it helps)     if (ir010 >= ir011 || ir110 >= ir111) {         sched_yield();         return;     }      assert(ne12 % ne02 == 0);     assert(ne13 % ne03 == 0);      // block-tiling attempt     const int64_t blck_0 = 16;     const int64_t blck_1 = 16;      // dot kernels can handle 1 row and col at a time, but mmla kernels can process 2 rows and cols     int64_t nrc = vec_dot_num_rows;     // TODO: currently the mmla kernels support only even numbered rows/cols.     // this check can be removed once they are extended to support odd numbered rows/cols too     if ((nr0 % 2 != 0) || (ne11 % 2 != 0)) {         nrc = 1;     }      const size_t src1_col_stride = src1_cont || src1->type != vec_dot_type ? row_size : nb11;      // attempt to reduce false-sharing (does not seem to make a difference)     // 16 * 2, accounting for mmla kernels     float tmp[32];      for (int64_t iir1 = ir110; iir1 < ir111; iir1 += blck_1) {         for (int64_t iir0 = ir010; iir0 < ir011; iir0 += blck_0) {             for (int64_t ir1 = iir1; ir1 < iir1 + blck_1 && ir1 < ir111; ir1 += nrc) {                 const int64_t i13 = (ir1/(ne12*ne1));                 const int64_t i12 = (ir1 - i13*ne12*ne1)/ne1;                 const int64_t i11 = (ir1 - i13*ne12*ne1 - i12*ne1);                  // broadcast src0 into src1                 const int64_t i03 = i13/r3;                 const int64_t i02 = i12/r2;                  const int64_t i1 = i11;                 const int64_t i2 = i12;                 const int64_t i3 = i13;                  const char * src0_row = (const char *) src0->data + (0 + i02*nb02 + i03*nb03);                  // desc: when src1 is not a contiguous memory block we have to calculate the offset using the strides                 //       if it is, then we have either copied the data to params->wdata and made it contiguous or we are using                 //       the original src1 data pointer, so we should index using the indices directly                 // TODO: this is a bit of a hack, we should probably have a better way to handle this                 const char * src1_col = (const char *) wdata +                     (src1_cont || src1->type != vec_dot_type                      ? (i11      + i12*ne11 + i13*ne12*ne11)*row_size                      : (i11*nb11 + i12*nb12 + i13*nb13));                 float * dst_col = (float *) ((char *) dst->data + (i1*nb1 + i2*nb2 + i3*nb3));                  //for (int64_t ir0 = iir0; ir0 < iir0 + blck_0 && ir0 < ir011; ++ir0) {                 //    vec_dot(ne00, &dst_col[ir0], src0_row + ir0*nb01, src1_col);                 //}                  for (int64_t ir0 = iir0; ir0 < iir0 + blck_0 && ir0 < ir011; ir0 += nrc) {                     vec_dot(ne00, &tmp[ir0 - iir0], (nrc>1 ? 16 : 0), src0_row + ir0*nb01, (nrc>1 ? nb01 : 0), src1_col, (nrc>1 ? src1_col_stride : 0), nrc);                 }                  for (int cn = 0; cn < nrc; ++cn) {                     memcpy(&dst_col[iir0 + cn*nb1/nb0], tmp + (cn*16), (MIN(iir0 + blck_0, ir011) - iir0)*sizeof(float));                 }             }         }     } }",
+      "construct_id": "b58480ad-cbe2-4f1b-9278-87e9f391c2a1",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.401830",
+        "updated_at": "2025-06-13T15:57:09.401843",
+        "language": "c",
+        "file": "ggml.c",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 10691,
+          "end": 10936
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER",
+          "RANK 9"
+        ]
+      }
+    },
+    {
+      "id": "ca392575-56aa-432f-b8ed-8369f0dbb68f",
+      "content": "//  static bool llama_kv_cache_init(              struct llama_kv_cache & cache,                  const llama_model & model,                          ggml_type   type_k,                          ggml_type   type_v,                           uint32_t   kv_size,                               bool   offload) {     const struct llama_hparams & hparams = model.hparams;      const uint32_t n_embd_k_gqa = hparams.n_embd_k_gqa() + hparams.n_embd_k_s();     const uint32_t n_embd_v_gqa = hparams.n_embd_v_gqa() + hparams.n_embd_v_s();     const int64_t  n_layer      = hparams.n_layer;      cache.has_shift = false;      // TODO: find a nicer way to add other recurrent model architectures     cache.recurrent = model.arch == LLM_ARCH_MAMBA;      // TODO: support mixed reccurent Transformer architectues     // NOTE: (!a || b) is a logical implication (a -> b)     GGML_ASSERT(!cache.recurrent || n_embd_k_gqa == hparams.n_embd_k_s());     GGML_ASSERT(!cache.recurrent || n_embd_v_gqa == hparams.n_embd_v_s());     GGML_ASSERT( cache.recurrent || n_embd_k_gqa == hparams.n_embd_k_gqa());     GGML_ASSERT( cache.recurrent || n_embd_v_gqa == hparams.n_embd_v_gqa());      cache.head = 0;     cache.size = kv_size;     cache.used = 0;      cache.type_k = type_k;     cache.type_v = type_v;      cache.cells.clear();     cache.cells.resize(kv_size);      if (cache.recurrent) {         // init state copy sources         for (uint32_t i = 0; i < cache.size; ++i) {             cache.cells[i].src = i;         }     }  #ifdef GGML_USE_CLBLAST     offload = false; #endif      // count used buffer types     std::map<ggml_backend_buffer_type_t, int> buft_layer_count;     if (offload) {         for (int64_t i = 0; i < n_layer; ++i) {             buft_layer_count[model.buft_layer[i].buft]++;         }     } else {         buft_layer_count[llama_default_buffer_type_cpu(true)] = n_layer;     }      // create a context for each buffer type     std::map<ggml_backend_buffer_type_t, ggml_context *> ctx_map;     for (auto & it : buft_layer_count) {         int n_layers = it.second;         struct ggml_init_params params = {             /*.mem_size   =*/ 2u*n_layers*ggml_tensor_overhead(),             /*.mem_buffer =*/ NULL,             /*.no_alloc   =*/ true,         };         ggml_context * ctx = ggml_init(params);         if (!ctx) {             LLAMA_LOG_ERROR(\"%s: failed to allocate context for kv cache\\n\", __func__);             return false;         }         ctx_map[it.first] = ctx;         cache.ctxs.push_back(ctx);     }      cache.k_l.reserve(n_layer);     cache.v_l.reserve(n_layer);      for (int i = 0; i < (int) n_layer; i++) {         struct ggml_context * ctx = offload ? ctx_map.at(model.buft_layer[i].buft) : cache.ctxs.front();         ggml_tensor * k = ggml_new_tensor_1d(ctx, type_k, n_embd_k_gqa*kv_size);         ggml_tensor * v = ggml_new_tensor_1d(ctx, type_v, n_embd_v_gqa*kv_size);         ggml_format_name(k, \"cache_k_l%d\", i);         ggml_format_name(v, \"cache_v_l%d\", i);         cache.k_l.push_back(k);         cache.v_l.push_back(v);     }      // allocate tensors and initialize the buffers to avoid NaNs in the padding     for (auto it : ctx_map) {         ggml_backend_buffer_type_t buft = it.first;         ggml_context * ctx = it.second;         ggml_backend_buffer_t buf = ggml_backend_alloc_ctx_tensors_from_buft(ctx, buft);         if (!buf) {             LLAMA_LOG_ERROR(\"%s: failed to allocate buffer for kv cache\\n\", __func__);             return false;         }         ggml_backend_buffer_clear(buf, 0);         LLAMA_LOG_INFO(\"%s: %10s KV buffer size = %8.2f MiB\\n\", __func__, ggml_backend_buffer_name(buf), ggml_backend_buffer_get_size(buf)/1024.0/1024.0);         cache.bufs.push_back(buf);     }      return true; }",
+      "construct_id": "6c449ccb-cefd-4e29-aaf2-eba1c2ff1767",
+      "tags": [],
+      "scores": {},
+      "metadata": {
+        "created_at": "2025-06-13T15:57:09.402765",
+        "updated_at": "2025-06-13T15:57:09.402778",
+        "language": "cpp",
+        "file": "llama.cpp",
+        "name": "original",
+        "imports": [],
+        "file_operation": "edit",
+        "enabled": true,
+        "line_numbers": {
+          "start": 2253,
+          "end": 2357
+        },
+        "tokens": null,
+        "construct_tags": [
+          "RANK 10",
+          "RANK 1-10",
+          "FUNCTION",
+          "VTUNE",
+          "PROFILER"
+        ]
+      }
+    }
+  ]
+}

@@ -520,8 +520,8 @@ async def execute_batch_recommendations_async(evaluator: MetaArtemisEvaluator, b
     """Execute batch recommendation creation asynchronously"""
     try:
         # Calculate total operations
-        total_operations = len(batch_config["selected_constructs"]) * len(batch_config["selected_templates"])
-        if batch_config["include_baseline"]:
+        total_operations = len(batch_config["selected_constructs"]) * len(batch_config.get("selected_templates", []))
+        if batch_config.get("include_baseline"):
             total_operations += len(batch_config["selected_constructs"])
         
         batch_results = []
@@ -536,8 +536,49 @@ async def execute_batch_recommendations_async(evaluator: MetaArtemisEvaluator, b
             
             representative_spec = construct_specs[0]
             
-            # Process each template
-            for template_id in batch_config["selected_templates"]:
+            # Process baseline first if enabled
+            if batch_config.get("include_baseline"):
+                current_operation += 1
+                
+                # Send simple progress update
+                if evaluator.progress_callback:
+                    progress = 0.4 + (current_operation / total_operations) * 0.5
+                    evaluator.progress_callback({
+                        "progress": progress,
+                        "message": f"Creating baseline recommendation for {representative_spec['name']} ({current_operation}/{total_operations})"
+                    })
+                
+                try:
+                    # Generate baseline recommendation
+                    baseline_result = await evaluator.execute_baseline_recommendation_for_spec(
+                        representative_spec
+                    )
+                    
+                    result = {
+                        "construct_id": construct_id,
+                        "template_id": "baseline",
+                        "spec_name": representative_spec["name"],
+                        "recommendation": baseline_result,
+                        "success": baseline_result.recommendation_success,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    batch_results.append(result)
+                
+                except Exception as e:
+                    logger.error(f"Error processing {construct_id} with baseline: {str(e)}")
+                    result = {
+                        "construct_id": construct_id,
+                        "template_id": "baseline",
+                        "spec_name": representative_spec["name"],
+                        "success": False,
+                        "error": str(e),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    batch_results.append(result)
+            
+            # Process each template if any are selected
+            for template_id in batch_config.get("selected_templates", []):
                 current_operation += 1
                 template_name = META_PROMPT_TEMPLATES.get(template_id, {}).get("name", template_id)
                 
@@ -571,47 +612,6 @@ async def execute_batch_recommendations_async(evaluator: MetaArtemisEvaluator, b
                     result = {
                         "construct_id": construct_id,
                         "template_id": template_id,
-                        "spec_name": representative_spec["name"],
-                        "success": False,
-                        "error": str(e),
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    batch_results.append(result)
-            
-            # Process baseline if enabled
-            if batch_config["include_baseline"]:
-                current_operation += 1
-                
-                # Send simple progress update
-                if evaluator.progress_callback:
-                    progress = 0.4 + (current_operation / total_operations) * 0.5
-                    evaluator.progress_callback({
-                        "progress": progress,
-                        "message": f"Creating baseline recommendation for {representative_spec['name']} ({current_operation}/{total_operations})"
-                    })
-                
-                try:
-                    # Generate baseline recommendation
-                    baseline_result = await evaluator.execute_baseline_recommendation_for_spec(
-                        representative_spec
-                    )
-                    
-                    result = {
-                        "construct_id": construct_id,
-                        "template_id": "baseline",
-                        "spec_name": representative_spec["name"],
-                        "recommendation": baseline_result,
-                        "success": baseline_result.recommendation_success,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    
-                    batch_results.append(result)
-                
-                except Exception as e:
-                    logger.error(f"Error processing {construct_id} with baseline: {str(e)}")
-                    result = {
-                        "construct_id": construct_id,
-                        "template_id": "baseline",
                         "spec_name": representative_spec["name"],
                         "success": False,
                         "error": str(e),

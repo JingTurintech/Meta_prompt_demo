@@ -56,11 +56,13 @@ from benchmark_evaluator_meta_artemis import (
 from shared_templates import (
     OPTIMIZATION_TASKS, META_PROMPT_TEMPLATES, AVAILABLE_LLMS, DEFAULT_PROJECT_OPTIMISATION_IDS,
     DEFAULT_BATCH_CONFIG, DEFAULT_BATCH_RECOMMENDATIONS_CONFIG, DEFAULT_BATCH_SOLUTIONS_CONFIG,
-    DEFAULT_BATCH_EVALUATION_CONFIG, DEFAULT_PROJECT_ID
+    DEFAULT_BATCH_EVALUATION_CONFIG, DEFAULT_PROJECT_ID,
+    DEFAULT_META_PROMPT_LLM, DEFAULT_CODE_OPTIMIZATION_LLM, DEFAULT_SCORING_LLM
 )
 from loguru import logger
 import sys
 from artemis_client.falcon.client import FalconSettings, ThanosSettings, FalconClient
+from vision_models.service.llm import LLMType
 
 # Configure the Streamlit page
 st.set_page_config(
@@ -122,7 +124,7 @@ def reset_batch_session_state():
 
 def step_1_use_case_selection():
     """Step 1: Use Case Selection"""
-    st.header("🎯 Step 1: Select Batch Use Case")
+    st.header("🎯 Step 1: Select Use Case")
     st.markdown("Choose the type of batch operation you want to perform:")
     
     # Use case options with descriptions
@@ -204,7 +206,7 @@ def step_1_use_case_selection():
         for feature in features:
             st.markdown(f"• {feature}")
         
-        if st.button("Select Batch Evaluation", key="select_batch_eval"):
+        if st.button("Select Batch Evaluation", key="select_batch_eval", type="primary"):
             update_batch_session_state({
                 "selected_use_case": "batch_evaluation",
                 "current_step": 2
@@ -220,7 +222,7 @@ def step_1_use_case_selection():
         for feature in features:
             st.markdown(f"• {feature}")
         
-        if st.button("Select Batch Solutions", key="select_batch_sols"):
+        if st.button("Select Batch Solutions", key="select_batch_sols", type="primary"):
             update_batch_session_state({
                 "selected_use_case": "batch_solutions",
                 "current_step": 2
@@ -237,7 +239,7 @@ def step_1_use_case_selection():
         for feature in features:
             st.markdown(f"• {feature}")
         
-        if st.button("Select Runtime Analysis", key="select_batch_analysis", type="secondary"):
+        if st.button("Select Runtime Analysis", key="select_batch_analysis", type="primary"):
             update_batch_session_state({
                 "selected_use_case": "batch_analysis",
                 "current_step": 2
@@ -565,8 +567,8 @@ def configure_batch_recommendations():
                     # Create evaluator instance for getting ranked constructs
                     evaluator = MetaArtemisEvaluator(
                         task_name="runtime_performance",
-                        meta_prompt_llm_type=LLMType("gpt-4-o"),
-                        code_optimization_llm_type=LLMType("gpt-4-o"),
+                        meta_prompt_llm_type=LLMType(DEFAULT_META_PROMPT_LLM),
+                        code_optimization_llm_type=LLMType(DEFAULT_CODE_OPTIMIZATION_LLM),
                         project_id=project_id
                     )
                     
@@ -723,7 +725,7 @@ def configure_batch_recommendations():
         st.info("ℹ️ Configure projects and settings above to see available constructs.")
     
     # Project and construct summary
-    if selected_templates and all_selected_constructs:
+    if (selected_templates or include_baseline) and all_selected_constructs:
         st.markdown("### 📊 Batch Processing Summary")
         
         # Calculate total operations based on selected constructs
@@ -773,8 +775,8 @@ def configure_batch_recommendations():
         if st.button("🚀 Start Batch Recommendation Creation", key="start_batch_recs", type="primary"):
             execute_batch_recommendations()
     else:
-        if not selected_templates:
-            st.warning("⚠️ Please select at least one meta-prompt template to continue.")
+        if not selected_templates and not include_baseline:
+            st.warning("⚠️ Please select at least one prompt version to continue.")
         if not all_selected_constructs:
             st.warning("⚠️ Please select at least one construct to continue.")
 
@@ -1593,8 +1595,9 @@ def execute_batch_recommendations():
                         logger.info(f"🎯 Using {len(selected_constructs_for_project)} selected constructs for {project_config['name']}")
                         
                         # IMPORTANT: Generate meta-prompts after client setup!
-                        status_text.text(f"Generating meta-prompts for {project_config['name']}...")
-                        asyncio.run(evaluator.generate_optimization_prompts(project_info))
+                        if batch_config.get("selected_templates"):  # Only generate meta-prompts if we have templates selected
+                            status_text.text(f"Generating meta-prompts for {project_config['name']}...")
+                            asyncio.run(evaluator.generate_optimization_prompts(project_info))
                         
                         # Create project-specific batch config
                         project_batch_config = {
@@ -1749,8 +1752,8 @@ def execute_batch_solutions():
             # Setup evaluator
             evaluator = MetaArtemisEvaluator(
                 task_name="runtime_performance",  # Default task
-                meta_prompt_llm_type=LLMType("gpt-4-o"),  # Default LLM
-                code_optimization_llm_type=LLMType("gpt-4-o"),  # Default LLM
+                meta_prompt_llm_type=LLMType(DEFAULT_META_PROMPT_LLM),  # Default LLM
+                code_optimization_llm_type=LLMType(DEFAULT_CODE_OPTIMIZATION_LLM),  # Default LLM
                 project_id=first_project_id
             )
             
@@ -1856,8 +1859,8 @@ async def execute_batch_evaluation_async(batch_config: dict, progress_bar, statu
         # Create evaluator for this project
         evaluator = MetaArtemisEvaluator(
             task_name="runtime_performance",
-            meta_prompt_llm_type=LLMType("gpt-4-o"),
-            code_optimization_llm_type=LLMType("gpt-4-o"),
+            meta_prompt_llm_type=LLMType(DEFAULT_META_PROMPT_LLM),
+            code_optimization_llm_type=LLMType(DEFAULT_CODE_OPTIMIZATION_LLM),
             project_id=project_id,
             evaluation_repetitions=batch_config["evaluation_config"]["repetitions"]
         )
@@ -2227,22 +2230,108 @@ def configure_batch_analysis():
                         runtime_metrics = results_summary.get("runtime_metrics", {})
                         
                         # Process each spec (construct) in the solution
-                        for spec in specs:
+                        # Handle original version (0 specs) differently
+                        if not specs:
+                            # Create base row data for original version
+                            base_row = {
+                                "project_id": project_id,
+                                "project_name": project_name,
+                                "solution_id": solution_id,
+                                "optimization_id": optimization_id,
+                                "optimization_name": optimization_name,
+                                "solution_status": solution_status,
+                                "created_at": created_at,
+                                "construct_id": "Original",
+                                "spec_id": "Original",
+                                "prompt_version": "original",
+                                "num_specs_in_solution": 0,
+                                "num_runtime_measurements": 0
+                            }
+                            
+                            # Extract runtime measurements from results summary directly
+                            runtime_measurements = []
+                            if results_summary and isinstance(results_summary, dict):
+                                for key, value in results_summary.items():
+                                    if isinstance(value, dict) and "runtime" in value:
+                                        runtime_data = value.get("runtime", {})
+                                        if isinstance(runtime_data, dict) and "values" in runtime_data:
+                                            runtime_measurements.extend(runtime_data["values"])
+                            
+                            # Create a row for runtime measurements
+                            runtime_row = base_row.copy()
+                            runtime_row["metric_name"] = "runtime"
+                            runtime_row["runtime_measurements"] = ",".join(map(str, runtime_measurements)) if runtime_measurements else ""
+                            runtime_row["metric_measurements"] = runtime_row["runtime_measurements"]
+                            runtime_row["metric_count"] = len(runtime_measurements) if runtime_measurements else 0
+                            csv_data.append(runtime_row)
+                            
+                            # Add metric-specific data for each additional runtime metric
+                            for metric_name, metric_data in runtime_metrics.items():
+                                if metric_name != "runtime" and isinstance(metric_data, dict) and metric_data.get("values"):
+                                    metric_row = base_row.copy()
+                                    metric_row["metric_name"] = metric_name
+                                    metric_row["runtime_measurements"] = ""  # Empty for non-runtime metrics
+                                    metric_row["metric_measurements"] = ",".join(map(str, metric_data["values"]))
+                                    metric_row["metric_count"] = len(metric_data["values"])
+                                    csv_data.append(metric_row)
+                            continue
+                            
+                        # For solutions with specs, determine if this is a version-level solution
+                        is_version_level = len(specs) > 1
+                        
+                        # Determine prompt version used
+                        evaluator = MetaArtemisEvaluator(
+                            task_name="runtime_performance",
+                            meta_prompt_llm_type=LLMType(DEFAULT_META_PROMPT_LLM),
+                            code_optimization_llm_type=LLMType(DEFAULT_CODE_OPTIMIZATION_LLM),
+                            project_id=project_id
+                        )
+                        
+                        # For version-level solutions, use the first spec to determine version type
+                        first_spec = specs[0]  # Safe now because we checked for empty specs
+                        prompt_version = determine_version_type_from_spec(
+                            solution, first_spec.get("spec_id", ""), project_id, evaluator
+                        )
+                        
+                        if is_version_level:
+                            # For version-level solutions, combine measurements from all constructs
+                            all_runtime_measurements = []
+                            for spec in specs:
+                                construct_id = spec.get("construct_id", "")
+                                measurements = extract_runtime_from_solution_results(results_summary, construct_id)
+                                if measurements:
+                                    all_runtime_measurements.extend(measurements)
+                            
+                            # Create base row data for version-level solution
+                            base_row = {
+                                "project_id": project_id,
+                                "project_name": project_name,
+                                "solution_id": solution_id,
+                                "optimization_id": optimization_id,
+                                "optimization_name": optimization_name,
+                                "solution_status": solution_status,
+                                "created_at": created_at,
+                                "construct_id": "All",  # Use "All" for version-level solutions
+                                "spec_id": "All",      # Use "All" for version-level solutions
+                                "prompt_version": prompt_version or "unknown",
+                                "num_specs_in_solution": len(specs),
+                                "num_runtime_measurements": len(all_runtime_measurements)
+                            }
+                            
+                            # Create a row for runtime measurements
+                            runtime_row = base_row.copy()
+                            runtime_row["metric_name"] = "runtime"
+                            runtime_row["runtime_measurements"] = ",".join(map(str, all_runtime_measurements)) if all_runtime_measurements else ""
+                            runtime_row["metric_measurements"] = runtime_row["runtime_measurements"]
+                            runtime_row["metric_count"] = len(all_runtime_measurements) if all_runtime_measurements else 0
+                            csv_data.append(runtime_row)
+                        else:
+                            # For construct-level solutions, handle the single spec
+                            spec = specs[0]
                             spec_id = spec.get("spec_id", "")
                             construct_id = spec.get("construct_id", "")
                             
-                            # Determine prompt version used
-                            evaluator = MetaArtemisEvaluator(
-                                task_name="runtime_performance",
-                                meta_prompt_llm_type=LLMType("gpt-4-o"),
-                                code_optimization_llm_type=LLMType("gpt-4-o"),
-                                project_id=project_id
-                            )
-                            prompt_version = determine_version_type_from_recommendations(
-                                solution, spec_id, construct_id, project_id, evaluator
-                            )
-                            
-                            # Extract all runtime measurements for this construct
+                            # Extract runtime measurements for this construct
                             runtime_measurements = extract_runtime_from_solution_results(results_summary, construct_id)
                             
                             # Create base row data
@@ -2258,30 +2347,41 @@ def configure_batch_analysis():
                                 "spec_id": spec_id,
                                 "prompt_version": prompt_version or "unknown",
                                 "num_specs_in_solution": len(specs),
-                                "num_runtime_measurements": len(runtime_measurements),
-                                "runtime_measurements": ",".join(map(str, runtime_measurements)) if runtime_measurements else ""
+                                "num_runtime_measurements": len(runtime_measurements)
                             }
                             
-                            # Add this row to the CSV data
-                            csv_data.append(base_row)
-                            
-                            # Add metric-specific data for each runtime metric
-                            for metric_name, metric_data in runtime_metrics.items():
-                                if isinstance(metric_data, dict) and metric_data.get("values"):
-                                    metric_row = base_row.copy()
-                                    metric_row["metric_name"] = metric_name
-                                    metric_row["metric_measurements"] = ",".join(map(str, metric_data["values"]))
-                                    metric_row["metric_count"] = len(metric_data["values"])
-                                    csv_data.append(metric_row)
+                            # Create a row for runtime measurements
+                            runtime_row = base_row.copy()
+                            runtime_row["metric_name"] = "runtime"
+                            runtime_row["runtime_measurements"] = ",".join(map(str, runtime_measurements)) if runtime_measurements else ""
+                            runtime_row["metric_measurements"] = runtime_row["runtime_measurements"]
+                            runtime_row["metric_count"] = len(runtime_measurements) if runtime_measurements else 0
+                            csv_data.append(runtime_row)
+                        
+                        # Add metric-specific data for each additional runtime metric (common for both types)
+                        for metric_name, metric_data in runtime_metrics.items():
+                            if metric_name != "runtime" and isinstance(metric_data, dict) and metric_data.get("values"):
+                                metric_row = base_row.copy()
+                                metric_row["metric_name"] = metric_name
+                                metric_row["runtime_measurements"] = ""  # Empty for non-runtime metrics
+                                metric_row["metric_measurements"] = ",".join(map(str, metric_data["values"]))
+                                metric_row["metric_count"] = len(metric_data["values"])
+                                csv_data.append(metric_row)
                 
                 if csv_data:
                     # Create DataFrame and CSV
                     df = pd.DataFrame(csv_data)
-                    csv_string = df.to_csv(index=False)
                     
-                    # Generate filename with timestamp
+                    # Get unique project names for the filename
+                    project_names = df['project_name'].unique()
+                    project_name_str = '_'.join(project_names)
+                    
+                    # Generate filename with timestamp and project names
                     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    filename = f"solution_evaluation_data_{timestamp}.csv"
+                    filename = f"evaluation_data_{project_name_str}_{timestamp}.csv"
+                    
+                    # Create CSV string for download
+                    csv_string = df.to_csv(index=False)
                     
                     st.download_button(
                         label="💾 Download CSV File",
@@ -2463,8 +2563,8 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
         from benchmark_evaluator_meta_artemis import MetaArtemisEvaluator, LLMType
         evaluator = MetaArtemisEvaluator(
             task_name="runtime_performance",
-            meta_prompt_llm_type=LLMType("gpt-4-o"),
-            code_optimization_llm_type=LLMType("gpt-4-o"),
+            meta_prompt_llm_type=LLMType(DEFAULT_META_PROMPT_LLM),
+            code_optimization_llm_type=LLMType(DEFAULT_CODE_OPTIMIZATION_LLM),
             project_id=project_id
         )
         

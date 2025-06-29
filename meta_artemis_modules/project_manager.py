@@ -8,7 +8,11 @@ import numpy as np
 from loguru import logger
 from typing import Dict, Any, List, Optional
 from benchmark_evaluator_meta_artemis import MetaArtemisEvaluator, LLMType
-from shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
+from shared_templates import (
+    DEFAULT_PROJECT_OPTIMISATION_IDS,
+    DEFAULT_META_PROMPT_LLM,
+    DEFAULT_CODE_OPTIMIZATION_LLM
+)
 
 
 async def get_project_info_async(project_id: str):
@@ -18,8 +22,8 @@ async def get_project_info_async(project_id: str):
         logger.info("🤖 Creating MetaArtemisEvaluator instance")
         evaluator = MetaArtemisEvaluator(
             task_name="runtime_performance",
-            meta_prompt_llm_type=LLMType("gpt-4-o"),
-            code_optimization_llm_type=LLMType("gpt-4-o"),
+            meta_prompt_llm_type=LLMType(DEFAULT_META_PROMPT_LLM),
+            code_optimization_llm_type=LLMType(DEFAULT_CODE_OPTIMIZATION_LLM),
             project_id=project_id
         )
         
@@ -159,8 +163,8 @@ async def get_existing_solutions_async(project_id: str):
         # Setup evaluator to access Falcon client
         evaluator = MetaArtemisEvaluator(
             task_name="runtime_performance",
-            meta_prompt_llm_type=LLMType("gpt-4-o"),
-            code_optimization_llm_type=LLMType("gpt-4-o"),
+            meta_prompt_llm_type=LLMType(DEFAULT_META_PROMPT_LLM),
+            code_optimization_llm_type=LLMType(DEFAULT_CODE_OPTIMIZATION_LLM),
             project_id=project_id
         )
         await evaluator.setup_clients()

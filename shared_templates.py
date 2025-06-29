@@ -3,7 +3,6 @@ from vision_models.service.llm import LLMType
 
 AVAILABLE_LLMS = [
     LLMType("gpt-4-o"),
-    LLMType("vertex-claude-v4-opus"),
     LLMType("llama-3-1-405b"),
     LLMType("qwen-2-5-coder-32b"),
     LLMType("mistral-large-2"),
@@ -12,8 +11,15 @@ AVAILABLE_LLMS = [
     LLMType("gpt-4-o-mini"),
     LLMType("gemini-v15-flash"),
     LLMType("llama-3-1-8b"),
-    LLMType("intel-phi-4-mini-instruct"),
+    LLMType("claude-v35-sonnet"),
+    LLMType("claude-v37-sonnet"),
+    # LLMType("claude-v4-sonnet"),
 ]
+
+# Default LLM types
+DEFAULT_META_PROMPT_LLM = "claude-v37-sonnet"
+DEFAULT_CODE_OPTIMIZATION_LLM = "claude-v37-sonnet"
+DEFAULT_SCORING_LLM = "claude-v37-sonnet"
 
 # Define optimization tasks
 OPTIMIZATION_TASKS = {
@@ -135,7 +141,7 @@ DEFAULT_PROJECT_OPTIMISATION_IDS = {
     "26ecc1a2-2b9c-4733-9d5d-07d0a6608686": "1ef5f3e1-6138-4236-b010-79f6cdb6c2be",  # BitmapPlusPlus
     
     # Benchmark projects
-    "114ba2fa-8bae-4e19-8f46-3fbef23b4a98": "07530524-379c-4485-af74-fc904edc0a41",  # BitNet
+    "114ba2fa-8bae-4e19-8f46-3fbef23b4a98": "9afc41b2-17f5-4799-90f1-1f1eb3625c42",  # BitNet-function
     "28334995-7488-4414-876a-fbbdd1d990f9": "d91557b7-6a75-4523-a2eb-b2ff6b6e3d91",  # llama.cpp
     "9f8f7777-f359-4f39-bfa8-6a0f4ebe473c": "af6c8049-cf3d-4379-975f-7f4247580188",  # faster-whisper
     "0126bc6f-57c0-4148-bd3e-3d30ea7c6099": "24f078c2-2c71-42ec-82e8-049edca0fa20",  # Langflow
@@ -145,7 +151,9 @@ DEFAULT_PROJECT_OPTIMISATION_IDS = {
     "a732b310-6ec1-44b5-bf4d-ac4b3618a62d": "c4e3ef1f-c571-4de3-b474-a435e721a5f2",  # csv-parser
     "372d1ebb-f420-4580-8da3-17d21f3664f3": "e8f76f2e-5329-4cba-a122-1992fba209c2",  # BitmapPlusPlus
     "074babc9-86c9-48c5-ac96-4d350a36c9ad": "f2474897-bbee-43df-a7cf-c862034233aa",  # rpcs3
-}
+    "cd204583-ca0a-4ee7-b837-e5115712902a": "25f1f709-0b46-4654-b9dd-1ed187b7a349",  # BitNet-file
+    "a3d17dee-6bed-40fb-95a1-f704ba5486bd": "787e1843-6a34-4266-a3c2-de6a82bf6793",  # AABitNet
+    }
 
 # Default batch configuration settings
 DEFAULT_BATCH_CONFIG = {
@@ -159,8 +167,8 @@ DEFAULT_BATCH_RECOMMENDATIONS_CONFIG = {
     "selected_constructs": [],
     "selected_templates": [],
     "include_baseline": False,
-    "meta_prompt_llm": "gpt-4-o",
-    "code_optimization_llm": "gpt-4-o", 
+    "meta_prompt_llm": DEFAULT_META_PROMPT_LLM,
+    "code_optimization_llm": DEFAULT_CODE_OPTIMIZATION_LLM, 
     "selected_task": "runtime_performance",
     "evaluation_repetitions": 3,
     "generated_recommendations": None,

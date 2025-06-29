@@ -14,42 +14,47 @@ from datetime import datetime
 from .utils import generate_colors, get_session_state
 import json
 from plotly.subplots import make_subplots
+from scipy import stats
 
 # Add statistical analysis imports
 import warnings
 warnings.filterwarnings('ignore')
 
-# R integration disabled - using optimized fallback method for Scott-Knott ESD
-# Our fallback method provides excellent Scott-Knott ESD-style statistical analysis
-R_AVAILABLE = False
-logger.info("Using optimized Scott-Knott ESD implementation (R integration disabled)")
-
-# scipy is no longer needed since we removed pairwise comparisons
-# Scott-Knott ESD handles multiple comparisons inherently
-SCIPY_AVAILABLE = False
+# scipy is needed for effect size calculations
+SCIPY_AVAILABLE = True
 
 
-def perform_scott_knott_esd_test(versions_data: Dict[str, List[float]], alpha: float = 0.05) -> Dict[str, Any]:
+def perform_statistical_analysis(versions_data: Dict[str, List[float]], alpha: float = 0.05, effect_size_threshold: float = 0.2) -> Dict[str, Any]:
     """
-    Perform Scott-Knott ESD test to group statistically similar versions using the official R package
+    Perform statistical analysis to group similar versions using:
+    - Mann-Whitney U test for non-parametric statistical comparison
+    - Cohen's d for effect size measurement
     
-    The Scott-Knott ESD test is specifically designed for multiple comparisons and groups
-    statistically similar treatments together while ranking them by performance.
+    Effect size thresholds (Cohen's d):
+    - Negligible: |d| < 0.2
+    - Small: 0.2 ≤ |d| < 0.5
+    - Medium: 0.5 ≤ |d| < 0.8
+    - Large: |d| ≥ 0.8
+    
+    We consider versions different if:
+    1. They are statistically different (p ≤ alpha) OR
+    2. They have non-negligible effect size (|d| ≥ effect_size_threshold)
     
     Args:
         versions_data: Dictionary with version names as keys and runtime lists as values
         alpha: Significance level (default 0.05)
+        effect_size_threshold: Threshold for considering effect size non-negligible (default 0.2)
+                             Versions with effect size ≥ this threshold will be considered different
     
     Returns:
         Dictionary containing test results, groups, and rankings
     """
-    logger.info(f"🧪 Performing Scott-Knott ESD test with α={alpha}")
-    
+
     # Filter out empty versions
     filtered_data = {k: v for k, v in versions_data.items() if v and len(v) > 0}
     
     if len(filtered_data) < 2:
-        logger.warning("⚠️ Need at least 2 versions with data for Scott-Knott ESD test")
+        logger.warning("⚠️ Need at least 2 versions with data for statistical testing")
         return {
             "success": False,
             "error": "Insufficient data for statistical testing",
@@ -58,110 +63,68 @@ def perform_scott_knott_esd_test(versions_data: Dict[str, List[float]], alpha: f
             "p_values": {}
         }
     
-    # Try R implementation using official ScottKnottESD package
-    if R_AVAILABLE:
-        try:
-            result = _scott_knott_esd_official_r(filtered_data, alpha)
-            if result["success"]:
-                logger.info("✅ Scott-Knott ESD test completed using official R package")
-                return result
-        except ImportError as e:
-            # R package installation failed, use fallback silently
-            logger.debug(f"R package installation failed: {str(e)}")
-        except Exception as e:
-            logger.warning(f"⚠️ Official R implementation failed: {str(e)}")
-    
-    # Use our optimized Scott-Knott ESD implementation
-    result = _basic_statistical_fallback(filtered_data, alpha)
-    logger.info("✅ Scott-Knott ESD statistical analysis completed")
-    
-    # Log raw results for debugging
-    logger.info(f"🔍 Scott-Knott ESD raw results:")
-    logger.info(f"   - Method: {result.get('method', 'Unknown')}")
-    logger.info(f"   - Success: {result.get('success', False)}")
-    logger.info(f"   - Groups: {result.get('groups', {})}")
-    logger.info(f"   - Rankings: {result.get('rankings', {})}")
-    logger.info(f"   - Alpha: {result.get('alpha', 'N/A')}")
-    logger.info(f"   - Num Groups: {result.get('num_groups', 0)}")
-    logger.info(f"   - Total Versions: {result.get('total_versions', 0)}")
-    
-    return result
-
-
-def _scott_knott_esd_official_r(versions_data: Dict[str, List[float]], alpha: float) -> Dict[str, Any]:
-    """
-    Scott-Knott ESD test using the official R package from https://github.com/klainfo/ScottKnottESD
-    
-    This follows the examples from the repository for proper usage.
-    """
     try:
-        # Import R utilities
-        utils = importr('utils')
-        base = importr('base')
+        version_names = list(filtered_data.keys())
         
-        # Try to load the ScottKnottESD package, install if needed
-        try:
-            sk_esd = importr('ScottKnottESD')
-            logger.debug("✅ ScottKnottESD package already installed")
-        except:
-            logger.info("📦 Installing ScottKnottESD R package...")
-            try:
-                # Install from CRAN with minimal output
-                utils.install_packages('ScottKnottESD', quiet=True)
-                sk_esd = importr('ScottKnottESD')
-                logger.info("✅ ScottKnottESD package installed successfully")
-            except Exception as install_error:
-                logger.warning(f"⚠️ Failed to install ScottKnottESD R package: {str(install_error)}")
-                # Raise a specific error to trigger fallback
-                raise ImportError("R package installation failed")
+        # Calculate means and variances
+        means = {version: np.mean(data) for version, data in filtered_data.items()}
         
-        # Prepare data in the format expected by sk_esd function
-        # Following the repository examples: data should be a dataframe with columns for each technique/version
-        version_names = list(versions_data.keys())
+        # Sort versions by mean performance (lower is better)
+        sorted_versions = sorted(means.keys(), key=lambda x: means[x])
         
-        # Find the maximum length to pad shorter lists with NA
-        max_length = max(len(data) for data in versions_data.values())
+        # Initialize groups
+        current_group = 1
+        groups = {}
+        rankings = {}
         
-        # Create a dataframe with columns for each version (following repository examples)
-        r_data_dict = {}
-        for version_name, data in versions_data.items():
-            # Pad with NA if needed (R handles NA values appropriately)
-            padded_data = data + [None] * (max_length - len(data))
-            r_data_dict[version_name] = padded_data
+        # Helper function for Cohen's d effect size
+        def cohen_d(data1, data2):
+            n1, n2 = len(data1), len(data2)
+            var1, var2 = np.var(data1, ddof=1), np.var(data2, ddof=1)
+            pooled_se = np.sqrt(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2))
+            return (np.mean(data1) - np.mean(data2)) / pooled_se if pooled_se != 0 else 0
         
-        # Convert to R dataframe using context manager
-        with pandas2ri.converter.context():
-            r_df = pandas2ri.py2rpy(pd.DataFrame(r_data_dict))
+        # Group versions based on statistical similarity
+        i = 0
+        while i < len(sorted_versions):
+            current_version = sorted_versions[i]
+            current_data = filtered_data[current_version]
+            
+            # Start a new group
+            current_group_versions = [current_version]
+            
+            # Compare with remaining versions
+            j = i + 1
+            while j < len(sorted_versions):
+                next_version = sorted_versions[j]
+                next_data = filtered_data[next_version]
+                
+                # Perform Mann-Whitney U test (non-parametric)
+                statistic, p_value = stats.mannwhitneyu(
+                    current_data, next_data, 
+                    alternative='two-sided'
+                )
+                
+                # Calculate effect size
+                effect_size = abs(cohen_d(current_data, next_data))
+                
+                # If not significantly different (p > alpha) and effect size below threshold
+                if p_value > alpha and effect_size < effect_size_threshold:
+                    current_group_versions.append(next_version)
+                    j += 1
+                else:
+                    break
+            
+            # Assign group and rank to all versions in current group
+            for version in current_group_versions:
+                groups[version] = current_group
+                rankings[version] = current_group
+            
+            # Move to next unprocessed version
+            i = j
+            current_group += 1
         
-        logger.debug(f"📊 Prepared data for Scott-Knott ESD: {len(version_names)} versions, max {max_length} observations")
-        
-        # Run Scott-Knott ESD test
-        # Use non-parametric version (version="np") as it's more robust for runtime data
-        # Following repository example: sk <- sk_esd(data, version="np")
-        logger.debug("🧪 Running Scott-Knott ESD test (non-parametric version)...")
-        sk_result = sk_esd.sk_esd(r_df, version="np")
-        
-        # Extract results from the sk_result object
-        # According to repository, sk_result contains:
-        # [0] - groups (group assignments)
-        # [1] - rankings (performance rankings)
-        # [2] - effect sizes or test statistics
-        
-        # Convert R results to Python
-        group_assignments = list(sk_result[0])
-        performance_rankings = list(sk_result[1])
-        
-        # Create dictionaries mapping version names to results
-        groups = dict(zip(version_names, group_assignments))
-        rankings = dict(zip(version_names, performance_rankings))
-        
-        logger.info(f"✅ Scott-Knott ESD test completed successfully")
-        logger.debug(f"📊 Groups: {groups}")
-        logger.debug(f"🏆 Rankings: {rankings}")
-        
-        # The Scott-Knott ESD test doesn't provide pairwise p-values in the traditional sense
-        # Instead, it groups treatments that are statistically similar
-        # We'll create a simplified p-value matrix based on group membership
+        # Create p-value matrix based on group membership
         p_values = {}
         for v1 in version_names:
             p_values[v1] = {}
@@ -173,186 +136,68 @@ def _scott_knott_esd_official_r(versions_data: Dict[str, List[float]], alpha: fl
                 else:
                     p_values[v1][v2] = 0.0  # Different groups = significantly different
         
-        # Extract additional statistics if available
-        test_statistic = None
-        if len(sk_result) > 2:
-            try:
-                test_statistic = float(sk_result[2])
-            except:
-                test_statistic = None
-        
-        return {
+        result = {
             "success": True,
-            "method": "Scott-Knott ESD (Official R Package)",
+            "method": f"Mann-Whitney U test with Cohen's d effect size (threshold: {effect_size_threshold})",
             "groups": groups,
             "rankings": rankings,
             "p_values": p_values,
             "alpha": alpha,
-            "test_statistic": test_statistic,
+            "effect_size_threshold": effect_size_threshold,
             "version_names": version_names,
-            "num_groups": len(set(group_assignments)),
-            "repository": "https://github.com/klainfo/ScottKnottESD"
+            "num_groups": len(set(groups.values())),
+            "total_versions": len(version_names)
         }
         
+        # Log a single consolidated message with key results
+        logger.debug(f"Statistical analysis completed: {len(version_names)} versions grouped into {len(set(groups.values()))} groups")
+        
+        return result
+        
     except Exception as e:
-        logger.error(f"❌ Official Scott-Knott ESD implementation failed: {str(e)}")
+        logger.error(f"❌ Statistical analysis failed: {str(e)}")
         import traceback
         logger.debug(f"Full traceback: {traceback.format_exc()}")
         return {"success": False, "error": str(e)}
 
 
-def _basic_statistical_fallback(versions_data: Dict[str, List[float]], alpha: float) -> Dict[str, Any]:
-    """
-    Basic statistical fallback when R is not available.
-    This is NOT a Scott-Knott ESD test, just basic ranking without pairwise comparisons.
-    """
-    try:
-        version_names = list(versions_data.keys())
-        
-        # Create rankings based on means (lower runtime = better rank)
-        means = {version: np.mean(data) if data else np.inf for version, data in versions_data.items()}
-        sorted_versions = sorted(means.keys(), key=lambda x: means[x])
-        rankings = {version: i + 1 for i, version in enumerate(sorted_versions)}
-        
-        # Simple grouping: each version in its own group (no proper statistical grouping)
-        groups = {version: rank for version, rank in rankings.items()}
-        
-        return {
-            "success": True,
-            "method": "Scott-Knott ESD Statistical Analysis",
-            "groups": groups,
-            "rankings": rankings,
-            "alpha": alpha,
-            "num_groups": len(set(groups.values())),
-            "total_versions": len(version_names)
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Basic statistical fallback failed: {str(e)}")
-        return {"success": False, "error": str(e)}
-
-
-def _no_stats_fallback(versions_data: Dict[str, List[float]]) -> Dict[str, Any]:
-    """
-    Final fallback when no statistical packages are available.
-    Just provides basic ranking without any statistical testing.
-    """
-    try:
-        version_names = list(versions_data.keys())
-        
-        # Create rankings based on means (lower runtime = better rank)
-        means = {version: np.mean(data) if data else np.inf for version, data in versions_data.items()}
-        sorted_versions = sorted(means.keys(), key=lambda x: means[x])
-        rankings = {version: i + 1 for i, version in enumerate(sorted_versions)}
-        
-        # Each version in its own group
-        groups = {version: rank for version, rank in rankings.items()}
-        
-        return {
-            "success": True,
-            "method": "Basic Ranking (No Statistical Testing)",
-            "groups": groups,
-            "rankings": rankings,
-            "alpha": np.nan,
-            "num_groups": len(groups),
-            "total_versions": len(version_names)
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ No-stats fallback failed: {str(e)}")
-        return {"success": False, "error": str(e)}
-
-
 def format_statistical_results(stats_results: Dict[str, Any]) -> str:
-    """Format Scott-Knott ESD test results for display"""
-    if not stats_results.get("success", False):
-        return f"❌ Statistical analysis failed: {stats_results.get('error', 'Unknown error')}"
+    """Format statistical analysis results for display"""
+    if not stats_results or not stats_results.get("success", False):
+        return "❌ Statistical analysis failed or no results available"
     
-    method = stats_results.get("method", "Unknown method")
-    alpha = stats_results.get("alpha", 0.05)
-    
-    result_text = f"**📊 Scott-Knott ESD Statistical Analysis**\n\n"
-    result_text += f"**Method:** {method}\n"
-    
-    # Add repository link if this is the official implementation
-    if "repository" in stats_results:
-        result_text += f"**Source:** [{stats_results['repository']}]({stats_results['repository']})\n"
-    
-    if not np.isnan(alpha):
-        result_text += f"**Significance Level:** α = {alpha}\n"
-    
-    # Scott-Knott ESD implementation is working properly
-    
-    result_text += "\n"
-    
-    # Scott-Knott ESD specific results
-    groups = stats_results.get("groups", {})
+    # Get rankings and sort versions by rank
     rankings = stats_results.get("rankings", {})
-    num_groups = stats_results.get("num_groups", len(set(groups.values())) if groups else 0)
+    if not rankings:
+        return "No ranking information available"
     
-    if groups and rankings:
-        result_text += f"**🔬 Scott-Knott ESD Results:**\n"
-        result_text += f"- **Number of Statistical Groups:** {num_groups}\n"
-        result_text += f"- **Total Versions Analyzed:** {len(groups)}\n\n"
-        
-        # Group versions by their group assignment
-        group_members = {}
-        for version, group_id in groups.items():
-            if group_id not in group_members:
-                group_members[group_id] = []
-            group_members[group_id].append(version)
-        
-        # Sort groups by best performance (lowest ranking = best performance)
-        sorted_group_ids = sorted(group_members.keys(), 
-                                key=lambda g: min(rankings.get(v, float('inf')) for v in group_members[g]))
-        
-        result_text += "**🏆 Performance Groups (Ranked by Performance):**\n\n"
-        
-        for i, group_id in enumerate(sorted_group_ids):
-            members = group_members[group_id]
-            
-            # Get performance info for this group
-            group_ranks = [rankings.get(v, float('inf')) for v in members]
-            avg_rank = np.mean(group_ranks) if group_ranks else float('inf')
-            
-            # Determine group performance level
-            if avg_rank <= 1.5:
-                performance_icon = "🥇"
-                performance_level = "Best Performance"
-            elif avg_rank <= 2.5:
-                performance_icon = "🥈"
-                performance_level = "Good Performance"
-            elif avg_rank <= 3.5:
-                performance_icon = "🥉"
-                performance_level = "Average Performance"
-            else:
-                performance_icon = "📈"
-                performance_level = "Lower Performance"
-            
-            result_text += f"**{performance_icon} Group {i+1}** ({performance_level}):\n"
-            result_text += f"*Versions in this group have statistically similar performance*\n"
-            
-            for member in members:
-                rank = rankings.get(member, "N/A")
-                result_text += f"  - **{member.title()}**: Rank {rank}\n"
-            result_text += "\n"
-        
-        # Add interpretation
-        result_text += "**📋 Interpretation:**\n"
-        if num_groups == 1:
-            result_text += "- All versions show statistically similar performance\n"
-            result_text += "- No significant differences detected between optimization approaches\n"
-        elif num_groups == len(groups):
-            result_text += "- Each version performs significantly differently\n"
-            result_text += "- Clear performance hierarchy between optimization approaches\n"
+    sorted_versions = sorted(rankings.items(), key=lambda x: (x[1], x[0]))
+    
+    # Format results
+    lines = []
+    lines.append(f"📊 Statistical Analysis Results:")
+    lines.append(f"Method: {stats_results.get('method', 'Unknown')}")
+    lines.append(f"Significance level (α): {stats_results.get('alpha', 0.05)}")
+    lines.append(f"Effect Size Threshold: {stats_results.get('effect_size_threshold', 0.2)}")
+    lines.append("")
+    
+    # Group versions by rank
+    current_rank = None
+    rank_group = []
+    
+    for version, rank in sorted_versions:
+        if current_rank != rank:
+            if rank_group:
+                lines.append(f"Rank {current_rank}: {', '.join(rank_group)}")
+            current_rank = rank
+            rank_group = [version]
         else:
-            result_text += f"- {num_groups} distinct performance groups identified\n"
-            result_text += "- Some optimization approaches perform similarly, others differ significantly\n"
-            result_text += "- Focus on the best-performing group for optimization insights\n"
+            rank_group.append(version)
     
-    # Scott-Knott ESD doesn't require omnibus tests - it inherently handles multiple comparisons
+    if rank_group:
+        lines.append(f"Rank {current_rank}: {', '.join(rank_group)}")
     
-    return result_text
+    return "\n".join(lines)
 
 
 def display_existing_solutions_analysis(results: dict):
@@ -917,7 +762,7 @@ def create_construct_box_plots_grid(individual_constructs: Dict[str, Dict[str, f
 
 
 def create_individual_construct_box_plots(construct_details: Dict[str, Dict], project_name: str) -> Optional[go.Figure]:
-    """Create individual box plots for each construct showing the five optimization versions with Scott-Knott ESD rankings"""
+    """Create individual box plots for each construct showing the five optimization versions with statistical analysis"""
     try:
         if not construct_details:
             logger.warning("No construct details provided")
@@ -933,12 +778,12 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
             logger.warning("No constructs with evaluation data found")
             return None
         
-        # Perform Scott-Knott ESD test for each construct
+        # Perform statistical analysis for each construct
         construct_rankings = {}
         for construct_id, details in constructs_with_data.items():
             construct_versions = details.get("versions", {})
             
-            # Prepare data for Scott-Knott ESD test
+            # Prepare data for statistical analysis
             versions_data = {}
             for version, data in construct_versions.items():
                 if data:  # Only include versions with data
@@ -946,18 +791,18 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
             
             if len(versions_data) >= 2:  # Need at least 2 versions for statistical testing
                 try:
-                    sk_result = perform_scott_knott_esd_test(versions_data, alpha=0.05)
+                    sk_result = perform_statistical_analysis(versions_data, alpha=0.05)
                     if sk_result.get("success", False):
                         construct_rankings[construct_id] = {
                             "rankings": sk_result.get("rankings", {}),
                             "groups": sk_result.get("groups", {}),
                             "success": True
                         }
-                        logger.debug(f"Scott-Knott ESD for Construct {details['rank']}: {sk_result.get('rankings', {})}")
+                        logger.debug(f"Statistical analysis for Construct {details['rank']}: {sk_result.get('rankings', {})}")
                     else:
                         construct_rankings[construct_id] = {"success": False}
                 except Exception as e:
-                    logger.warning(f"Scott-Knott ESD failed for Construct {details['rank']}: {str(e)}")
+                    logger.warning(f"Statistical analysis failed for Construct {details['rank']}: {str(e)}")
                     construct_rankings[construct_id] = {"success": False}
             else:
                 construct_rankings[construct_id] = {"success": False}
@@ -1001,7 +846,7 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
             construct_rank = details.get("rank", idx + 1)
             construct_versions = details.get("versions", {})
             
-            # Get Scott-Knott ESD rankings for this construct
+            # Get statistical analysis results for this construct
             sk_rankings = {}
             best_version = None
             if construct_id in construct_rankings and construct_rankings[construct_id].get("success", False):
@@ -1014,7 +859,7 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
             for version_idx, version in enumerate(versions):
                 version_data = construct_versions.get(version, [])
                 
-                # Get Scott-Knott ESD rank for this version
+                # Get statistical analysis rank for this version
                 sk_rank = sk_rankings.get(version, None)
                 
                 # Create version label for hover (includes rank info)
@@ -1107,9 +952,9 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
                         # Create custom tick labels with rank information and bold formatting for best version
                         tick_labels = []
                         tick_vals = []
-                        for idx, version in enumerate(versions):
-                            # Get the Scott-Knott ESD rank for this version in this construct
-                            sk_rank = sk_rankings.get(version, None) if sk_rankings else None
+                        for version in versions:
+                            # Get the statistical analysis rank for this version in this construct
+                            sk_rank = sk_rankings.get(version, None)
                             
                             # Create label with rank information
                             if sk_rank is not None:
@@ -1117,14 +962,14 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
                             else:
                                 version_label = version.title()
                             
-                            # Make the best version bold
-                            if version == best_version:
+                            # Make the best version bold - use HTML formatting
+                            if sk_rank == 1:  # Changed from 'version in best_versions' to directly check rank
                                 tick_labels.append(f"<b>{version_label}</b>")  # Bold the best version
                             else:
                                 tick_labels.append(version_label)
                             
                             # Use version names to match box plot x-positions
-                            tick_vals.append(version)  # Use version name to match box plot x-values
+                            tick_vals.append(version)
                         
                         fig.update_xaxes(
                             showgrid=True,
@@ -1153,7 +998,7 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
 
 
 def create_version_level_box_plot(version_level_data: Dict[str, Any], project_name: str) -> Optional[go.Figure]:
-    """Create box plot for version-level solutions with Scott-Knott ESD rankings - consistent with construct-level plots"""
+    """Create box plot for version-level solutions with statistical analysis"""
     try:
         # Prepare data for box plot - ALWAYS include all 5 versions
         version_runtime_data = {
@@ -1172,13 +1017,15 @@ def create_version_level_box_plot(version_level_data: Dict[str, Any], project_na
                 if runtime_data and version_type in version_runtime_data:
                     version_runtime_data[version_type].extend(runtime_data)
         
-        # Get Scott-Knott ESD rankings from the data (already computed)
-        sk_rankings = version_level_data.get("scott_knott_rankings", {})
+        # Perform statistical analysis on version-level data
+        sk_result = perform_statistical_analysis(version_runtime_data, alpha=0.05)
+        sk_rankings = sk_result.get("rankings", {}) if sk_result.get("success", False) else {}
         
-        # Find best version for highlighting
-        best_version = None
-        if sk_rankings:
-            best_version = min(sk_rankings.items(), key=lambda x: x[1])[0]
+        # Store rankings in version_level_data for table display
+        version_level_data["statistical_rankings"] = sk_rankings
+        
+        # Find best versions (all with rank 1)
+        best_versions = [v for v, r in sk_rankings.items() if r == 1] if sk_rankings else []
         
         # Create the box plot
         fig = go.Figure()
@@ -1260,11 +1107,11 @@ def create_version_level_box_plot(version_level_data: Dict[str, Any], project_na
                     hovertemplate=f"<b>Version-Level</b><br>Version: {version_label_with_rank}<br>No data<extra></extra>"
                 ))
         
-        # Create custom tick labels with rank information and bold formatting for best version
+        # Create custom tick labels with rank information and bold formatting for best versions
         tick_labels = []
         tick_vals = []
         for version in versions:
-            # Get the Scott-Knott ESD rank for this version
+            # Get the statistical analysis rank for this version
             sk_rank = sk_rankings.get(version, None)
             
             # Create label with rank information
@@ -1273,8 +1120,8 @@ def create_version_level_box_plot(version_level_data: Dict[str, Any], project_na
             else:
                 version_label = version.title()
             
-            # Make the best version bold
-            if version == best_version:
+            # Make the best versions bold - use HTML formatting
+            if sk_rank == 1:  # Changed from 'version in best_versions' to directly check rank
                 tick_labels.append(f"<b>{version_label}</b>")  # Bold the best version
             else:
                 tick_labels.append(version_label)
@@ -1284,35 +1131,29 @@ def create_version_level_box_plot(version_level_data: Dict[str, Any], project_na
         
         # Update layout - consistent with construct-level plots
         fig.update_layout(
-            title=f"📊 Version-Level Performance Comparison - {project_name}",
             height=500,
             margin=dict(l=50, r=50, t=80, b=50),
             plot_bgcolor='white',
             paper_bgcolor='white',
-            showlegend=False
-        )
-        
-        # Update axes with custom tick labels
-        fig.update_xaxes(
-            tickvals=tick_vals,
-            ticktext=tick_labels,
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray',
-            showline=True,
-            linewidth=1,
-            linecolor='black',
-            title="Prompt Version"
-        )
-        
-        fig.update_yaxes(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray',
-            showline=True,
-            linewidth=1,
-            linecolor='black',
-            title="Runtime (seconds)"
+            showlegend=False,
+            xaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='lightgray',
+                zeroline=False,
+                showline=False,
+                tickvals=tick_vals,
+                ticktext=tick_labels,
+                title="Prompt Version"
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='lightgray',
+                zeroline=False,
+                showline=False,
+                title="Runtime (seconds)"
+            )
         )
         
         return fig
@@ -1322,10 +1163,13 @@ def create_version_level_box_plot(version_level_data: Dict[str, Any], project_na
         return None
 
 def create_overall_project_box_plot(valid_projects: Dict[str, Dict[str, Any]]) -> Optional[go.Figure]:
-    """Create overall project box plot comparing 5 versions across all projects"""
+    """Create overall project box plot comparing 5 versions across all constructs"""
     try:
-        # Combine data from all valid projects
-        combined_data = {
+        # Get project name (we know there's only one project)
+        project_name = next(iter(valid_projects.values()))["project_name"]
+        
+        # Prepare data for box plot - ALWAYS include all 5 versions
+        version_runtime_data = {
             "original": [],
             "baseline": [],
             "simplified": [],
@@ -1333,39 +1177,39 @@ def create_overall_project_box_plot(valid_projects: Dict[str, Dict[str, Any]]) -
             "enhanced": []
         }
         
-        project_labels = {
-            "original": [],
-            "baseline": [],
-            "simplified": [],
-            "standard": [],
-            "enhanced": []
-        }
-        
-        # Collect data from all projects
+        # Collect ALL runtime data from ALL constructs
         for project_id, result in valid_projects.items():
-            project_name = result["project_name"]
-            versions_data = result.get("versions_data", {})
-            
-            for version in combined_data.keys():
-                version_data = versions_data.get(version, [])
-                if version_data:
-                    combined_data[version].extend(version_data)
-                    project_labels[version].extend([project_name] * len(version_data))
+            # Get construct-level data
+            construct_details = result.get("construct_details", {})
+            for construct_id, construct_data in construct_details.items():
+                # Get runtime data for each version in this construct
+                construct_versions = construct_data.get("versions", {})  # Changed from versions_data to versions
+                for version in version_runtime_data.keys():
+                    version_data = construct_versions.get(version, [])  # Access data directly from versions dict
+                    if version_data:
+                        version_runtime_data[version].extend(version_data)
         
         # Check if we have any data to plot
-        total_data_points = sum(len(data) for data in combined_data.values())
+        total_data_points = sum(len(data) for data in version_runtime_data.values())
         logger.info(f"Overall box plot: {total_data_points} total data points across all versions")
-        for version, data in combined_data.items():
+        for version, data in version_runtime_data.items():
             logger.info(f"  - {version}: {len(data)} data points")
         
         if total_data_points == 0:
             logger.warning("No data available for overall project box plot")
             return None
+            
+        # Perform statistical analysis on version-level data
+        sk_result = perform_statistical_analysis(version_runtime_data, alpha=0.05)
+        sk_rankings = sk_result.get("rankings", {}) if sk_result.get("success", False) else {}
+        
+        # Find best versions (all with rank 1)
+        best_versions = [v for v, r in sk_rankings.items() if r == 1] if sk_rankings else []
         
         # Create the box plot
         fig = go.Figure()
         
-        # Version colors for consistency
+        # Use SAME colors as version-level box plots for consistency
         version_colors = {
             "original": "#ff7f7f",     # Light red
             "baseline": "#ffb347",     # Light orange  
@@ -1374,29 +1218,45 @@ def create_overall_project_box_plot(valid_projects: Dict[str, Dict[str, Any]]) -
             "enhanced": "#90ee90"      # Green
         }
         
-        # Add box plots for each version (show all versions, even if empty)
-        for version in ["original", "baseline", "simplified", "standard", "enhanced"]:
-            if combined_data[version]:  # Has data
+        versions = ["original", "baseline", "simplified", "standard", "enhanced"]
+        
+        # Add box plots for ALL versions (including empty ones)
+        for version in versions:
+            version_data = version_runtime_data[version]
+            
+            # Create version label for hover (includes rank info)
+            version_label_with_rank = version.title()
+            if version in sk_rankings:
+                rank = sk_rankings[version]
+                version_label_with_rank += f" (Rank {rank})"
+            
+            # Create clean version label for legend (no rank info)
+            legend_label = version.title()
+            
+            if version_data:  # Has data
                 fig.add_trace(go.Box(
-                    y=combined_data[version],
-                    name=version.title(),
+                    x=[version] * len(version_data),  # Explicitly set x values
+                    y=version_data,
+                    name=legend_label,  # Use clean version name
                     boxpoints='all',  # Show all data points
                     jitter=0.3,      # Add jitter to points
                     pointpos=-1.8,   # Position points to the left of the box
                     marker=dict(
                         color=version_colors[version],
-                        size=4,
-                        opacity=0.6
+                        size=6,
+                        opacity=0.7
                     ),
                     line=dict(color=version_colors[version]),
                     fillcolor=version_colors[version],
-                    opacity=0.7
+                    opacity=0.7,
+                    showlegend=False,
+                    hovertemplate=f"<b>Overall</b><br>Version: {version_label_with_rank}<br>Runtime: %{{y:.3f}}s<extra></extra>"
                 ))
                 
                 # Add mean marker
-                mean_value = np.mean(combined_data[version])
+                mean_value = np.mean(version_data)
                 fig.add_trace(go.Scatter(
-                    x=[version.title()],
+                    x=[version],
                     y=[mean_value],
                     mode='markers',
                     marker=dict(
@@ -1406,53 +1266,74 @@ def create_overall_project_box_plot(valid_projects: Dict[str, Dict[str, Any]]) -
                         line=dict(color=version_colors[version], width=2)
                     ),
                     showlegend=False,
-                    hovertemplate=f"<b>Overall</b><br>Version: {version.title()}<br>Mean: {mean_value:.3f}s<extra></extra>",
-                    name=f"Mean {version.title()}"
+                    hovertemplate=f"<b>Overall</b><br>Version: {version_label_with_rank}<br>Mean: {mean_value:.3f}s<extra></extra>",
+                    name=f"Mean {legend_label}"
                 ))
             else:  # No data - show empty box plot
                 fig.add_trace(go.Box(
+                    x=[version],  # Explicitly set x value even for empty box
                     y=[],  # Empty data
-                    name=version.title(),
+                    name=legend_label,  # Use clean version name
                     marker=dict(
                         color=version_colors[version],
-                        size=4,
+                        size=6,
                         opacity=0.3
                     ),
                     line=dict(color=version_colors[version], width=1),
                     fillcolor=version_colors[version],
                     opacity=0.2,
-                    showlegend=True
+                    showlegend=False,
+                    hovertemplate=f"<b>Overall</b><br>Version: {version_label_with_rank}<br>No data<extra></extra>"
                 ))
         
-        # Update layout
+        # Create custom tick labels with rank information and bold formatting for best versions
+        tick_labels = []
+        tick_vals = []
+        for version in versions:
+            # Get the statistical analysis rank for this version
+            sk_rank = sk_rankings.get(version, None)
+            
+            # Create label with rank information
+            if sk_rank is not None:
+                version_label = f"{version.title()}\n(Rank {sk_rank})"
+            else:
+                version_label = version.title()
+            
+            # Make the best versions bold
+            if version in best_versions:
+                tick_labels.append(f"<b>{version_label}</b>")  # Bold the best version
+            else:
+                tick_labels.append(version_label)
+            
+            # Use version names to match box plot x-positions
+            tick_vals.append(version)
+        
+        # Update layout - consistent with version-level plots
         fig.update_layout(
-            title={
-                'text': "Overall Runtime Performance Comparison (All Projects)",
-                'x': 0.5,
-                'xanchor': 'center',
-                'font': {'size': 16}
-            },
-            xaxis_title="Version",
-            yaxis_title="Runtime (seconds)",
-            showlegend=False,
+            title=f"Overall Runtime Performance Comparison - {project_name}",  # Updated title
             height=500,
             margin=dict(l=50, r=50, t=80, b=50),
             plot_bgcolor='white',
-            paper_bgcolor='white'
-        )
-        
-        # Update axes
-        fig.update_xaxes(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray',
-            categoryorder='array',
-            categoryarray=['Original', 'Baseline', 'Simplified', 'Standard', 'Enhanced']
-        )
-        fig.update_yaxes(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray'
+            paper_bgcolor='white',
+            showlegend=False,
+            xaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='lightgray',
+                zeroline=False,
+                showline=False,
+                tickvals=tick_vals,
+                ticktext=tick_labels,
+                title="Prompt Version"
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='lightgray',
+                zeroline=False,
+                showline=False,
+                title="Runtime (seconds)"
+            )
         )
         
         return fig
@@ -1553,7 +1434,7 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
                     total_evals = details.get("total_evaluations", 0)
                     missing_versions = details.get("missing_versions", [])
                     
-                    # Prepare data for Scott-Knott ESD test
+                    # Prepare data for statistical analysis
                     versions_data = {}
                     for version, data in construct_versions.items():
                         if data:  # Only include versions with data
@@ -1568,19 +1449,19 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
                         "Missing": 50 - total_evals
                     }
                     
-                    # Perform Scott-Knott ESD test for rankings
+                    # Perform statistical analysis for rankings
                     sk_rankings = {}
-                    best_version = None
+                    best_versions = []
                     if len(versions_data) >= 2:  # Need at least 2 versions for statistical testing
                         try:
-                            sk_result = perform_scott_knott_esd_test(versions_data, alpha=0.05)
+                            sk_result = perform_statistical_analysis(versions_data, alpha=0.05)
                             if sk_result.get("success", False):
                                 sk_rankings = sk_result.get("rankings", {})
-                                # Find the best version (rank 1) for this construct
+                                # Find all versions with rank 1
                                 if sk_rankings:
-                                    best_version = min(sk_rankings.items(), key=lambda x: x[1])[0]
+                                    best_versions = [v for v, r in sk_rankings.items() if r == 1]
                         except Exception as e:
-                            logger.warning(f"Scott-Knott ESD failed for Construct {construct_rank}: {str(e)}")
+                            logger.warning(f"Statistical analysis failed for Construct {construct_rank}: {str(e)}")
                     
                     # Calculate performance stats for each version
                     version_counts = {}
@@ -1607,7 +1488,7 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
                         # Ranking info
                         if version in sk_rankings:
                             rank = sk_rankings[version]
-                            if version == best_version and rank == 1:
+                            if version in best_versions:
                                 rank_display = f"🥇 {rank}"
                             else:
                                 rank_display = str(rank)
@@ -1665,6 +1546,29 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
         if version_level_data and version_level_data.get("solutions"):
             st.markdown("#### 📊 Version-Level Performance Analysis")
             
+            # Prepare data for statistical analysis
+            version_runtime_data = {
+                "original": [],
+                "baseline": [],
+                "simplified": [],
+                "standard": [],
+                "enhanced": []
+            }
+            
+            # Collect runtime data from each solution
+            for solution in version_level_data["solutions"]:
+                version_type = solution["version_type"]
+                runtime_data = solution.get("runtime_data", [])
+                if runtime_data and version_type in version_runtime_data:
+                    version_runtime_data[version_type].extend(runtime_data)
+            
+            # Perform statistical analysis on version-level data
+            sk_result = perform_statistical_analysis(version_runtime_data, alpha=0.05)
+            sk_rankings = sk_result.get("rankings", {}) if sk_result.get("success", False) else {}
+            
+            # Store rankings in version_level_data for table display
+            version_level_data["statistical_rankings"] = sk_rankings
+            
             # Version-level box plot
             try:
                 version_box_plot = create_version_level_box_plot(version_level_data, project_name)
@@ -1677,7 +1581,6 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
 
             # Version-level summary statistics (show all 5 versions)
             version_stats = version_level_data.get("version_stats", {})
-            sk_rankings = version_level_data.get("scott_knott_rankings", {})
             
             if version_stats:
                 st.markdown("##### 📊 Version-Level Evaluation Details")
@@ -1698,17 +1601,14 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
                         "max_runtime": np.nan
                     })
                     
-                    # Add ranking information
-                    version_display = version.title()
-                    if version in sk_rankings:
-                        rank = sk_rankings[version]
-                        if rank == 1:
-                            version_display += f" 🥇 (Rank {rank})"
-                        else:
-                            version_display += f" (Rank {rank})"
+                    # Add ranking information as a separate column
+                    rank_display = str(sk_rankings.get(version, "N/A"))
+                    if version in sk_rankings and sk_rankings[version] == 1:
+                        rank_display = f"🥇 {sk_rankings[version]}"
                     
                     stats_data.append({
-                        "Version": version_display,
+                        "Version": version.title(),
+                        "Rank": rank_display,
                         "Solutions": stats["solution_count"],
                         "Total Measurements": stats["total_measurements"],
                         "Mean Runtime (s)": f"{stats['mean_runtime']:.3f}" if not np.isnan(stats['mean_runtime']) else "N/A",
