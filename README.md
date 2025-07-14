@@ -69,13 +69,48 @@ A comprehensive framework for meta-prompt optimization and evaluation using Stre
 
 4. Set up environment variables:
    Create a `.env` file in the project root with:
-   ```
+
    FALCON_API_KEY=your_falcon_api_key
    VISION_API_KEY=your_vision_api_key
    THANOS_API_KEY=your_thanos_api_key
+
+## Environment Setup: .env File
+
+To run this project, you need to create a `.env` file in the project root directory with your API credentials and service endpoints. This file is used to configure Artemis and related services.
+
+**Example .env file:**
+```
+THANOS_HOST=artemis.turintech.ai
+THANOS_HTTPS=true
+THANOS_PORT=443
+THANOS_POSTFIX=/turintech-thanos/api
+THANOS_CLIENT_ID=your_client_id
+THANOS_CLIENT_SECRET=your_client_secret
+THANOS_GRANT_TYPE=password
+THANOS_USERNAME=your_username
+THANOS_PASSWORD=your_password
+
+FALCON_HOST=artemis.turintech.ai
+FALCON_HTTPS=true
+FALCON_PORT=443
+FALCON_POSTFIX=/api
+
+VISION_HOST=artemis.turintech.ai
+VISION_HTTPS=true
+VISION_PORT=443
+VISION_POSTFIX=/api
 ```
 
+- Replace the values with your actual credentials.
+- **Do not commit your `.env` file to version control.**
+- The application will automatically load these variables using `python-dotenv`.
+
 ## Usage
+
+```bash
+conda activate meta_prompt_env
+streamlit run xxx.py
+```
 
 The framework provides two main workflows for evaluating and optimizing meta-prompts:
 
@@ -135,3 +170,43 @@ streamlit run streamlit_app_scoring_by_project.py
 - Adjust LLM settings in the respective Python files
 - Modify optimization parameters through the Streamlit interface
 - Configure project-specific settings in the `.env` file
+
+## Remote Artemis Runner Server Management
+
+This project includes a remote Ubuntu server (35.189.66.83) running an Artemis custom runner in a Docker container.
+
+### Server Connection
+Connect to the remote server using the SSH key:
+```bash
+ssh -i my_rsa_key_with_email ubuntu@35.189.66.83
+```
+
+### Check Artemis Runner Status
+Check if the artemis runner container is running:
+```bash
+# Check all running containers
+ssh -i my_rsa_key_with_email ubuntu@35.189.66.83 "docker ps"
+
+
+### View Artemis Runner Logs
+Check recent logs to verify the runner is functioning:
+```bash
+# View last 20 log entries
+docker logs --tail 20 artemis-stable-runner
+
+# Follow logs in real-time
+docker logs --tail 100 -f artemis-stable-runner
+```
+
+### Container Management
+Start/stop/restart the artemis runner if needed:
+```bash
+# Stop the container
+ssh -i my_rsa_key_with_email ubuntu@35.189.66.83 "docker stop artemis-stable-runner"
+
+# Start the container
+ssh -i my_rsa_key_with_email ubuntu@35.189.66.83 "docker start artemis-stable-runner"
+
+# Restart the container
+ssh -i my_rsa_key_with_email ubuntu@35.189.66.83 "docker restart artemis-stable-runner"
+```
