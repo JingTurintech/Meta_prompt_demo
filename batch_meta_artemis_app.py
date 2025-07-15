@@ -68,8 +68,7 @@ from vision_models.service.llm import LLMType
 st.set_page_config(
     page_title="Batch Meta Artemis",
     page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 def initialize_batch_session_state():
@@ -537,14 +536,25 @@ def configure_batch_recommendations():
     st.markdown("---")
     st.markdown("#### 🎯 Top-Ranked Constructs Selection")
     
-    # Add refresh button to clear cache
-    col1, col2 = st.columns([1, 11])
+    # A toggle to switch between top-ranked and all constructs view
+    col1, col2, col3 = st.columns([1, 2, 9])
     with col1:
         if st.button("🔄 Refresh", key="refresh_constructs", help="Refresh construct data from projects"):
             st.session_state.construct_selection_cache = {}
             st.rerun()
+    # Ensure toggle state is stored in session_state
+    if "show_all_constructs" not in st.session_state:
+        st.session_state.show_all_constructs = False
     with col2:
-        st.markdown("**Select top-ranked constructs (RANK 1-10) for recommendation generation**")
+        toggle_label = "Show All Constructs" if not st.session_state.show_all_constructs else "Show Top Ranked"
+        if st.button(toggle_label, key="toggle_construct_view", help="Toggle between viewing only top-ranked constructs and viewing every construct in the project"):
+            st.session_state.show_all_constructs = not st.session_state.show_all_constructs
+            st.rerun()
+    with col3:
+        if st.session_state.show_all_constructs:
+            st.markdown("**Select constructs (showing ALL constructs)**")
+        else:
+            st.markdown("**Select top-ranked constructs (RANK 1-10) for recommendation generation**")
     
     # Initialize construct selection cache
     if "construct_selection_cache" not in st.session_state:
@@ -564,6 +574,16 @@ def configure_batch_recommendations():
                     # Get project info and specs
                     project_info, project_specs, _ = asyncio.run(get_project_info_async(project_id))
                     
+                    # Check if project_specs is None
+                    if project_specs is None:
+                        st.warning(f"Could not retrieve project specs for {project_config['name']}. Skipping...")
+                        st.session_state.construct_selection_cache[project_id] = {
+                            "constructs": [],
+                            "all_constructs": [],
+                            "project_specs": []
+                        }
+                        continue
+                    
                     # Create evaluator instance for getting ranked constructs
                     evaluator = MetaArtemisEvaluator(
                         task_name="runtime_performance",
@@ -575,16 +595,20 @@ def configure_batch_recommendations():
                     # Setup evaluator clients
                     asyncio.run(evaluator.setup_clients())
                     
-                    # Get top-ranked constructs
+                    # Get top-ranked constructs (limited by constructs_per_project)
                     top_ranked_constructs = get_top_ranked_constructs(
                         project_id=project_id,
                         evaluator=evaluator,
                         top_n=constructs_per_project
                     )
                     
+                    # Also collect ALL construct IDs for the optional complete view
+                    all_construct_ids = list({spec["construct_id"] for spec in project_specs})
+                    
                     # Cache the results
                     st.session_state.construct_selection_cache[project_id] = {
                         "constructs": top_ranked_constructs,
+                        "all_constructs": all_construct_ids,
                         "project_specs": project_specs
                     }
                     
@@ -598,29 +622,34 @@ def configure_batch_recommendations():
         # Get cached data
         cached_data = st.session_state.construct_selection_cache[project_id]
         top_ranked_constructs = cached_data["constructs"]
+        all_constructs = cached_data.get("all_constructs", [])
         project_specs = cached_data["project_specs"]
         
-        if top_ranked_constructs:
+        # Determine construct list to display based on user preference
+        constructs_to_display = all_constructs if st.session_state.show_all_constructs else top_ranked_constructs
+        
+        if constructs_to_display:
             # Create construct data for table
             construct_data = []
-            for i, construct_id in enumerate(top_ranked_constructs):
-                # Find construct rank and info
-                construct_rank = i + 1
+            for idx, construct_id in enumerate(constructs_to_display):
+                # Determine rank label
+                if construct_id in top_ranked_constructs:
+                    rank_display = f"Rank {top_ranked_constructs.index(construct_id) + 1}"
+                else:
+                    rank_display = "-"
+
                 construct_specs = [s for s in project_specs if s["construct_id"] == construct_id]
-                
-                # Get construct info from first spec
-                construct_info = construct_specs[0] if construct_specs else {}
-                
+
                 construct_data.append({
                     "Select": st.session_state.get(f"construct_select_{project_id}_{construct_id}", True),  # Default to selected
-                    "Rank": f"Rank {construct_rank}",
+                    "Rank": rank_display,
                     "Construct ID": construct_id[:12] + "...",
                     "Specs Count": len(construct_specs),
                     "Project": project_config["name"],
                     "Full Construct ID": construct_id,
                     "Project ID": project_id
                 })
-            
+
             project_construct_data[project_id] = construct_data
     
     # Display construct selection table if we have data
@@ -1276,6 +1305,16 @@ def configure_batch_evaluation():
             
             # Add solutions to the combined table
             for sol in available_solutions:
+                # Calculate number of evaluations (use runtime metrics as they represent actual evaluations)
+                num_results = 0
+                if sol.get("results_summary"):
+                    runtime_metrics = sol["results_summary"].get("runtime_metrics", {})
+                    # Use the first runtime metric to get the count (all should have the same count)
+                    for metric_data in runtime_metrics.values():
+                        if isinstance(metric_data, dict) and "count" in metric_data:
+                            num_results = metric_data["count"]  # Use assignment, not addition
+                            break  # Only need the first one since all should be the same
+                
                 solution_data = {
                     "Select": False,
                     "Solution ID": sol["solution_id"][:12] + "...",
@@ -1283,7 +1322,7 @@ def configure_batch_evaluation():
                     "Optimization": sol["optimization_name"],
                     "Status": sol["status"],
                     "Specs": len(sol["specs"]),
-                    "Has Results": sol["has_results"],
+                    "# Results": num_results,
                     "Created": sol["created_at"][:19] if sol["created_at"] != "Unknown" else "Unknown"
                 }
                 all_solution_data.append(solution_data)
@@ -1316,9 +1355,9 @@ def configure_batch_evaluation():
                 # Apply filters
                 filtered_data = all_solution_data.copy()
                 if show_only_with_results:
-                    filtered_data = [sol for sol in filtered_data if sol["Has Results"]]
+                    filtered_data = [sol for sol in filtered_data if sol["# Results"] > 0]
                 elif show_only_without_results:
-                    filtered_data = [sol for sol in filtered_data if not sol["Has Results"]]
+                    filtered_data = [sol for sol in filtered_data if sol["# Results"] == 0]
                 
                 if selected_project_filter != "All Projects":
                     # Filter by project name (extract from the display string)
@@ -1396,9 +1435,9 @@ def configure_batch_evaluation():
                             help="Number of specifications",
                             width="small"
                         ),
-                        "Has Results": st.column_config.CheckboxColumn(
-                            "Has Results",
-                            help="Whether solution has execution results",
+                        "# Results": st.column_config.NumberColumn(
+                            "# Results",
+                            help="Number of evaluation results available",
                             width="small"
                         ),
                         "Created": st.column_config.TextColumn(
@@ -1407,7 +1446,7 @@ def configure_batch_evaluation():
                             width="medium"
                         )
                     },
-                    disabled=["Solution ID", "Project", "Optimization", "Status", "Specs", "Has Results", "Created"],
+                    disabled=["Solution ID", "Project", "Optimization", "Status", "Specs", "# Results", "Created"],
                     hide_index=True,
                     use_container_width=True,
                     key="solution_selection_table"
@@ -2653,13 +2692,41 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
                 construct_level_solutions.append(solution)
                 version_level_solutions.append(solution)  # Also include in version-level
                 
-                # Apply to ALL top-ranked constructs as original version (for construct-level analysis)
-                for construct_id in top_ranked_constructs:
-                    runtime_data = extract_runtime_from_solution_results(solution_results_summary, construct_id)
-                    if runtime_data:
-                        construct_performance_data[construct_id]["versions"]["original"].extend(runtime_data)
-                        construct_performance_data[construct_id]["total_evaluations"] += len(runtime_data)
-                        logger.debug(f"📊 Added {len(runtime_data)} runtime measurements for construct {construct_id[:8]}... version 'original'")
+                # For original version, extract runtime data ONCE from solution level (not per construct)
+                # The original solution contains runtime measurements for the entire solution execution
+                solution_runtime_data = []
+                
+                # Extract runtime metrics from solution results summary
+                runtime_metrics = solution_results_summary.get('runtime_metrics', {})
+                if runtime_metrics:
+                    for metric_name, metric_data in runtime_metrics.items():
+                        if isinstance(metric_data, dict):
+                            values = metric_data.get('values', [])
+                            if values and isinstance(values, list):
+                                solution_runtime_data.extend([float(v) for v in values if isinstance(v, (int, float))])
+                                logger.debug(f"Found {len(values)} solution-level runtime measurements in {metric_name}")
+                
+                # Fallback: try to extract from any runtime field in results_summary
+                if not solution_runtime_data:
+                    for key, value in solution_results_summary.items():
+                        if "runtime" in str(key).lower() or "time" in str(key).lower():
+                            if isinstance(value, dict):
+                                values = value.get('values', [])
+                                if values and isinstance(values, list):
+                                    solution_runtime_data.extend([float(v) for v in values if isinstance(v, (int, float))])
+                                    break
+                
+                # Apply the SAME runtime data to ALL top-ranked constructs (they all use original code)
+                if solution_runtime_data:
+                    logger.debug(f"📊 Original solution has {len(solution_runtime_data)} runtime measurements total")
+                    
+                    for construct_id in top_ranked_constructs:
+                        # All constructs get the same original runtime data since they all use original code
+                        construct_performance_data[construct_id]["versions"]["original"].extend(solution_runtime_data)
+                        construct_performance_data[construct_id]["total_evaluations"] += len(solution_runtime_data)
+                        logger.debug(f"📊 Added {len(solution_runtime_data)} runtime measurements for construct {construct_id[:8]}... version 'original' (shared from solution)")
+                else:
+                    logger.warning(f"⚠️ No runtime data found in original solution {solution_id[:8]}...")
             
             elif num_specs == 1:
                 # Construct-level solution: 1 spec = only 1 construct uses recommendations
@@ -2747,6 +2814,9 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
     
     individual_constructs = {}
     
+    # Track if we've already added original data to avoid duplication
+    original_data_added = False
+    
     for construct_id, construct_data in construct_performance_data.items():
         construct_rank = construct_data["rank"]
         construct_name = f"construct_rank_{construct_rank}"
@@ -2755,11 +2825,22 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
         
         for version, runtime_list in construct_data["versions"].items():
             if runtime_list:
-                # Add to overall project data
-                versions_data[version].extend(runtime_list)
-                
-                # Add to individual construct data (use mean if multiple values)
-                individual_constructs[construct_name][version] = np.mean(runtime_list)
+                # Special handling for original version to avoid duplication
+                if version == "original":
+                    # Only add original data once to the overall project data
+                    if not original_data_added:
+                        versions_data[version].extend(runtime_list)
+                        original_data_added = True
+                        logger.debug(f"📊 Added {len(runtime_list)} original runtime measurements to overall project data (once)")
+                    
+                    # Add to individual construct data (use mean if multiple values)
+                    individual_constructs[construct_name][version] = np.mean(runtime_list)
+                else:
+                    # For non-original versions, add normally
+                    versions_data[version].extend(runtime_list)
+                    
+                    # Add to individual construct data (use mean if multiple values)
+                    individual_constructs[construct_name][version] = np.mean(runtime_list)
             else:
                 # Use NaN for missing versions
                 individual_constructs[construct_name][version] = np.nan
@@ -3280,46 +3361,11 @@ def main():
     state = get_batch_session_state()
     current_step = state.get("current_step", 1)
     
-    # Sidebar navigation
-    st.sidebar.title("🎯 Navigation")
-    
-    steps = {
-        1: "🎯 Use Case Selection",
-        2: "⚙️ Batch Configuration"
-    }
-    
-    # Step selection in sidebar
-    selected_step = st.sidebar.radio(
-        "Select Step:",
-        options=list(steps.keys()),
-        format_func=lambda x: f"Step {x}: {steps[x]}",
-        index=current_step - 1
-    )
-    
-    # Update current step if changed
-    if selected_step != current_step:
-        update_batch_session_state({"current_step": selected_step})
-        st.rerun()
-    
     # Display current step
     if current_step == 1:
         step_1_use_case_selection()
     elif current_step == 2:
         step_2_batch_configuration()
-    
-    # Footer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📊 Current Session")
-    st.sidebar.markdown(f"**Project ID:** {state['project_id'][:8]}...")
-    st.sidebar.markdown(f"**Current Step:** {current_step}")
-    if state.get("selected_use_case"):
-        st.sidebar.markdown(f"**Use Case:** {state['selected_use_case'].replace('_', ' ').title()}")
-    
-    # Quick actions
-    st.sidebar.markdown("### ⚡ Quick Actions")
-    if st.sidebar.button("🔄 Reset Session"):
-        reset_batch_session_state()
-        st.rerun()
 
 if __name__ == "__main__":
     main() 

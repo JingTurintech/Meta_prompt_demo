@@ -191,7 +191,7 @@ DEFAULT_BATCH_EVALUATION_CONFIG = {
     "selected_solutions": [],
     "selected_recommendations": [],
     "evaluation_config": {
-        "repetitions": 3
+        "repetitions": 10
     },
     "batch_results": []
 }
