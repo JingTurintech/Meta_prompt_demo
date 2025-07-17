@@ -2,34 +2,6 @@
 
 A comprehensive framework for meta-prompt optimization and evaluation using Streamlit. This project provides tools for optimizing and evaluating prompts for code optimization tasks, with both local and project-based evaluation capabilities.
 
-## Project Structure
-
-```
-Meta_prompt_demo/
-├── Core Applications/
-│   ├── batch_meta_artemis_app.py              # Batch processing for large-scale operations
-│   ├── benchmark_streamlit_app_meta_artemis.py # Comprehensive benchmarking platform
-│   ├── benchmark_streamlit_app.py             # Basic benchmarking interface
-│   └── benchmark_streamlit_app_Artemis.py     # Artemis-integrated benchmarking
-├── Optimization Workflows/
-│   ├── streamlit_app_optimization.py          # Basic optimization UI
-│   ├── streamlit_app_optimization_by_project.py # Project-based optimization
-│   └── streamlit_app_optimization_enhanced_by_project.py # Enhanced project optimization
-├── Scoring & Evaluation/
-│   ├── streamlit_app_scoring.py               # Basic scoring interface
-│   └── streamlit_app_scoring_by_project.py    # Project-based scoring
-├── Analysis & Utilities/
-│   ├── llm_runtime_correlation_analysis_app.py # Runtime correlation analysis
-│   ├── outlier_solution_analyzer.py           # Outlier solution analysis
-│   ├── benchmark_collector.py                 # Benchmark data collection
-│   └── llm_score_collector.py                 # LLM score collection
-└── Core Modules/
-    ├── meta_artemis_modules/                   # Modular components
-    ├── benchmark_evaluator_meta_artemis.py    # Core evaluation engine
-    ├── meta_prompt_optimization.py            # Optimization logic
-    └── meta_prompt_scoring.py                 # Scoring algorithms
-```
-
 ## Prerequisites
 
 - Python 3.11 or higher
@@ -180,31 +152,3 @@ ssh -i my_rsa_key_with_email ubuntu@35.189.66.83 "docker start artemis-stable-ru
 # Restart the container
 ssh -i my_rsa_key_with_email ubuntu@35.189.66.83 "docker restart artemis-stable-runner"
 ```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with the appropriate application
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For issues and questions:
-1. Check the application logs in the Streamlit interface
-2. Verify your `.env` configuration
-3. Ensure the Artemis runner server is operational
-4. Create an issue in the GitHub repository
-
----
-
-**🎯 Quick Start Guide:**
-- **New users**: Start with `streamlit run streamlit_app_optimization.py`
-- **Large-scale evaluation**: Use `streamlit run batch_meta_artemis_app.py`
-- **Comprehensive benchmarking**: Try `streamlit run benchmark_streamlit_app_meta_artemis.py`
-- **Performance analysis**: Run `streamlit run llm_runtime_correlation_analysis_app.py`
