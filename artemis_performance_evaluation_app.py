@@ -53,7 +53,7 @@ from benchmark_evaluator_meta_artemis import (
     MetaArtemisEvaluator, LLMType, save_evaluation_results, 
     load_evaluation_results, RecommendationResult, SolutionResult
 )
-from shared_templates import (
+from meta_artemis_modules.shared_templates import (
     OPTIMIZATION_TASKS, META_PROMPT_TEMPLATES, AVAILABLE_LLMS, DEFAULT_PROJECT_OPTIMISATION_IDS,
     DEFAULT_BATCH_CONFIG, DEFAULT_BATCH_RECOMMENDATIONS_CONFIG, DEFAULT_BATCH_SOLUTIONS_CONFIG,
     DEFAULT_BATCH_EVALUATION_CONFIG, DEFAULT_PROJECT_ID,

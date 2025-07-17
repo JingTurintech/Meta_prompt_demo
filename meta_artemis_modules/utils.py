@@ -6,7 +6,7 @@ import streamlit as st
 import colorsys
 from loguru import logger
 import sys
-from shared_templates import OPTIMIZATION_TASKS
+from meta_artemis_modules.shared_templates import OPTIMIZATION_TASKS
 from typing import Dict, Any
 
 # Configure logger

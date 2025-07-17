@@ -21,7 +21,7 @@ from falcon_models import (
     CodeTaskScoresResponse,
     CodeTaskModelScoreResponse
 )
-from shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
+from meta_artemis_modules.shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
 
 # Load environment variables
 load_dotenv()

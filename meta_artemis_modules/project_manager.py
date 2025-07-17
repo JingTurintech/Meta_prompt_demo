@@ -8,7 +8,7 @@ import numpy as np
 from loguru import logger
 from typing import Dict, Any, List, Optional
 from benchmark_evaluator_meta_artemis import MetaArtemisEvaluator, LLMType
-from shared_templates import (
+from meta_artemis_modules.shared_templates import (
     DEFAULT_PROJECT_OPTIMISATION_IDS,
     DEFAULT_META_PROMPT_LLM,
     DEFAULT_CODE_OPTIMIZATION_LLM
@@ -196,7 +196,7 @@ async def get_existing_solutions_async(project_id: str):
                     logger.warning(f"Could not get AI run {rec['ai_run_id']}: {str(e)}")
         
         # Add project-specific optimization IDs first, then fallbacks
-        from shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
+        from meta_artemis_modules.shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
         
         common_optimization_ids = []
         
@@ -205,7 +205,7 @@ async def get_existing_solutions_async(project_id: str):
             common_optimization_ids.append(DEFAULT_PROJECT_OPTIMISATION_IDS[project_id])
             logger.info(f"🎯 Using default optimization ID for project {project_id}: {DEFAULT_PROJECT_OPTIMISATION_IDS[project_id]}")
         else:
-            logger.warning(f"⚠️ No default optimization ID found for project {project_id}. Add it to DEFAULT_PROJECT_OPTIMISATION_IDS in shared_templates.py")
+            logger.warning(f"⚠️ No default optimization ID found for project {project_id}. Add it to DEFAULT_PROJECT_OPTIMISATION_IDS in meta_artemis_modules/shared_templates.py")
         
         optimization_ids.update(common_optimization_ids)
         
@@ -348,7 +348,7 @@ async def get_existing_solutions_async(project_id: str):
 
 def get_project_configurations():
     """Get predefined project configurations"""
-    from shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
+    from meta_artemis_modules.shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
     
     # Define project names and descriptions for the predefined projects
     project_descriptions = {

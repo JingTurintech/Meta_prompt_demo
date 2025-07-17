@@ -11,6 +11,7 @@ from .utils import get_session_state, update_session_state
 import pandas as pd
 import json
 from datetime import datetime
+from meta_artemis_modules.shared_templates import META_PROMPT_TEMPLATES
 
 
 def create_solutions_from_recommendations(meta_artemis_state: dict, optimization_id: str = None) -> List[Dict[str, Any]]:
@@ -95,7 +96,6 @@ def format_solution_display_name(solution_data: Dict[str, Any]) -> str:
     template_id = solution_data.get('template_id', 'unknown')
     
     # Try to get a more human-readable template name
-    from shared_templates import META_PROMPT_TEMPLATES
     template_name = template_id
     if template_id in META_PROMPT_TEMPLATES:
         template_name = META_PROMPT_TEMPLATES[template_id]['name']

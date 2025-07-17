@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional, Callable
 from benchmark_evaluator_meta_artemis import (
     MetaArtemisEvaluator, LLMType, RecommendationResult
 )
-from shared_templates import META_PROMPT_TEMPLATES, DEFAULT_PROJECT_OPTIMISATION_IDS
+from meta_artemis_modules.shared_templates import META_PROMPT_TEMPLATES, DEFAULT_PROJECT_OPTIMISATION_IDS
 from .utils import get_session_state
 from datetime import datetime
 import json
