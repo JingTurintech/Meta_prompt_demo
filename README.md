@@ -126,106 +126,20 @@ streamlit run llm_scoring_evaluation_app.py
 - Load existing LLM scoring experiment results (ELO ratings)
 
 
-## 3. 🔧 Optimization Workflow
+## 3. 🔍 Analysis & Utility Tools
 
-**For prompt optimization and code improvement tasks**
-
-### Basic Optimization
-```bash
-streamlit run streamlit_app_optimization.py
-```
-- Local optimization using predefined tasks
-- Suitable for initial prompt development and testing
-- No external dependencies required
-
-### Project-Based Optimization
-```bash
-streamlit run streamlit_app_optimization_by_project.py
-```
-- Integrates with Artemis Falcon API
-- Uses real project context for optimization
-- Production-ready optimization pipeline
-
-### Enhanced Project Optimization
-```bash
-streamlit run streamlit_app_optimization_enhanced_by_project.py
-```
-- Advanced features including:
-  - Project information display
-  - Enhanced visualization
-  - Detailed performance metrics
-  - Real-time optimization tracking
-
-## 4. 📈 Scoring & Analysis Workflow
-
-**For prompt evaluation and performance analysis**
-
-### Basic Scoring
-```bash
-streamlit run streamlit_app_scoring.py
-```
-- Evaluates prompts using local benchmarks
-- Provides basic scoring metrics
-- Suitable for quick prompt comparisons
-
-### Project-Based Scoring
-```bash
-streamlit run streamlit_app_scoring_by_project.py
-```
-- Evaluates prompts in the context of real projects
-- Features:
-  - Comparative analysis of different prompts
-  - Performance visualization
-  - Project-specific metrics
-  - Integration with Artemis Falcon API
-
-### Runtime Correlation Analysis
-```bash
-streamlit run llm_runtime_correlation_analysis_app.py
-```
-- Analyzes correlation between LLM scores and runtime performance
-- Statistical analysis with Bayesian modeling
-- Advanced visualization and insights
-- Performance prediction capabilities
-
-## 5. 🔍 Analysis & Utility Tools
-
-**For data analysis and system utilities**
-
-### Outlier Solution Analyzer
-```bash
-python outlier_solution_analyzer.py --solution-id <solution_id>
-```
-- Analyze specific outlier solutions
-- Trace solutions back to their source constructs and prompts
-- Performance comparison and insights
-
-### Benchmark Data Collector
-```bash
-python benchmark_collector.py
-```
-- Collect benchmark data from Artemis platform
-- Automated data extraction and processing
-- Export capabilities for further analysis
-
-### LLM Score Collector
+### Collect scores from a project
 ```bash
 python llm_score_collector.py
 ```
-- Collect LLM scores for runtime correlation analysis
-- Export data in CSV format
-- Integration with correlation analysis tools
 
-## 🎯 Choosing the Right Application
+### Analyze correlation between runtime and LLM scores (unfinished)
+```bash
+streamlit run llm_runtime_correlation_analysis.py
+```
 
-| Use Case | Recommended Application | Key Benefits |
-|----------|-------------------------|--------------|
-| **Large-scale evaluation** | `batch_meta_artemis_app.py` | Multi-project processing, statistical analysis |
-| **Comprehensive benchmarking** | `benchmark_streamlit_app_meta_artemis.py` | Complete pipeline, advanced features |
-| **Quick prototyping** | `streamlit_app_optimization.py` | Simple, fast, local processing |
-| **Production evaluation** | `streamlit_app_optimization_enhanced_by_project.py` | Real projects, detailed metrics |
-| **Prompt comparison** | `streamlit_app_scoring_by_project.py` | Side-by-side analysis, visualization |
-| **Performance analysis** | `llm_runtime_correlation_analysis_app.py` | Statistical insights, predictions |
+
+
 
 ## Remote Artemis Runner Server Management
 
