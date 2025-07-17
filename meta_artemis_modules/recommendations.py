@@ -1044,17 +1044,83 @@ def display_recommendations_table(project_id: str, project_name: str, recommenda
     # Create expandable section for this project
     with st.expander(f"📋 {project_name} - Top Constructs Recommendations", expanded=True):
         
+        # Extract unique LLM types from spec names
+        llm_types = set()
+        for rec in recommendations:
+            spec_name = rec.get("spec_name", "")
+            # Extract LLM type from spec name (e.g., "claude-v37-sonnet-cb69e" -> "claude-v37-sonnet")
+            if spec_name:
+                # Common LLM patterns
+                if "claude" in spec_name.lower():
+                    if "claude-v37-sonnet" in spec_name.lower():
+                        llm_types.add("claude-v37-sonnet")
+                    elif "claude" in spec_name.lower():
+                        llm_types.add("claude")
+                elif "gpt-4" in spec_name.lower():
+                    if "gpt-4-o" in spec_name.lower():
+                        llm_types.add("gpt-4-o")
+                    else:
+                        llm_types.add("gpt-4")
+                elif "gpt" in spec_name.lower():
+                    llm_types.add("gpt")
+                elif "gemini" in spec_name.lower():
+                    llm_types.add("gemini")
+                else:
+                    # Extract first part before hyphen or underscore as potential LLM type
+                    parts = spec_name.split("-")
+                    if len(parts) >= 2:
+                        potential_llm = "-".join(parts[:2])
+                        llm_types.add(potential_llm)
+        
+        # Filter section
+        if llm_types:
+            st.markdown("#### 🔍 Filter Options")
+            col1, col2 = st.columns(2)
+            with col1:
+                llm_filter_options = ["All LLM Types"] + sorted(list(llm_types))
+                selected_llm_filter = st.selectbox(
+                    "Filter by LLM Type:",
+                    options=llm_filter_options,
+                    index=0,
+                    key=f"llm_filter_{project_id}",
+                    help="Filter recommendations by LLM type based on spec name"
+                )
+            with col2:
+                st.markdown("**Available LLM Types:**")
+                st.markdown(f"Found: {', '.join(sorted(llm_types))}")
+        else:
+            selected_llm_filter = "All LLM Types"
+        
+        # Apply LLM filter
+        if selected_llm_filter != "All LLM Types":
+            filtered_recommendations = []
+            for rec in recommendations:
+                spec_name = rec.get("spec_name", "").lower()
+                if selected_llm_filter.lower() in spec_name:
+                    filtered_recommendations.append(rec)
+            recommendations = filtered_recommendations
+            logger.info(f"🔍 Filtered to {len(recommendations)} recommendations for LLM type: {selected_llm_filter}")
+        
         # Project-specific selection buttons
         col1, col2 = st.columns(2)
         with col1:
             if st.button(f"Select All - {project_name}", key=f"select_all_{project_id}"):
                 # Only select regular recommendations (not placeholders)
-                for i, rec in enumerate(regular_recommendations):
-                    st.session_state[f"rec_select_{project_id}_{i}"] = True
+                filtered_regular = [r for r in recommendations if r.get("source") != "placeholder"]
+                for i, rec in enumerate(filtered_regular):
+                    # Find original index in unfiltered list
+                    original_index = next((j for j, orig_rec in enumerate(st.session_state.cached_project_recommendations[project_id]) 
+                                         if orig_rec["spec_name"] == rec["spec_name"]), None)
+                    if original_index is not None:
+                        st.session_state[f"rec_select_{project_id}_{original_index}"] = True
         with col2:
             if st.button(f"Deselect All - {project_name}", key=f"deselect_all_{project_id}"):
                 for i, rec in enumerate(recommendations):
-                    st.session_state[f"rec_select_{project_id}_{i}"] = False
+                    # Find original index in unfiltered list
+                    original_index = next((j for j, orig_rec in enumerate(st.session_state.cached_project_recommendations[project_id]) 
+                                         if orig_rec["spec_name"] == rec["spec_name"]), None)
+                    if original_index is not None:
+                        st.session_state[f"rec_select_{project_id}_{original_index}"] = False
         
         # Group recommendations by construct for better organization
         construct_groups = {}
@@ -1089,8 +1155,12 @@ def display_recommendations_table(project_id: str, project_name: str, recommenda
             # Determine if this is selectable (not a placeholder)
             is_selectable = rec.get("source") != "placeholder"
             
+            # Find original index in unfiltered list for session state
+            original_index = next((j for j, orig_rec in enumerate(st.session_state.cached_project_recommendations[project_id]) 
+                                 if orig_rec["spec_name"] == rec["spec_name"]), i)
+            
             row_data = {
-                "Select": st.session_state.get(f"rec_select_{project_id}_{i}", False) if is_selectable else False,
+                "Select": st.session_state.get(f"rec_select_{project_id}_{original_index}", False) if is_selectable else False,
                 "Construct ID": construct_id[:8] + "..." if is_first_in_group else "",
                 "Rank": f"Rank {construct_rank}" if construct_rank and is_first_in_group else "",
                 "Spec Name": rec["spec_name"],
@@ -1177,8 +1247,21 @@ def display_recommendations_table(project_id: str, project_name: str, recommenda
             
             logger.info(f"🏷️ Template distribution: {template_counts}")
             
-            # Show summary
-            st.info(f"📊 Showing {len(regular_recommendations)} available recommendations and {len(placeholder_recommendations)} placeholders for top-ranked constructs")
+            # Show summary with filter information
+            filtered_regular = [r for r in recommendations if r.get("source") != "placeholder"]
+            filtered_placeholder = [r for r in recommendations if r.get("source") == "placeholder"]
+            
+            if selected_llm_filter != "All LLM Types":
+                st.info(f"📊 Showing {len(filtered_regular)} available recommendations and {len(filtered_placeholder)} placeholders for top-ranked constructs (filtered by {selected_llm_filter})")
+            else:
+                st.info(f"📊 Showing {len(filtered_regular)} available recommendations and {len(filtered_placeholder)} placeholders for top-ranked constructs")
+            
+            # Update session state based on edited data
+            for i, (row, rec) in enumerate(zip(edited_data, recommendations)):
+                # Find original index in unfiltered list
+                original_index = next((j for j, orig_rec in enumerate(st.session_state.cached_project_recommendations[project_id]) 
+                                     if orig_rec["spec_name"] == rec["spec_name"]), i)
+                st.session_state[f"rec_select_{project_id}_{original_index}"] = row["Select"]
             
             # Extract selected recommendations
             selected_recommendations = []

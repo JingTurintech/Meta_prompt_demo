@@ -1023,6 +1023,58 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
         st.warning("⚠️ No prompt versions found in the selected projects. Please ensure you have generated recommendations first.")
         return
     
+    # Add LLM filter before template selection
+    st.markdown("#### 🤖 LLM Filter")
+    st.info("💡 **Important**: Filter by LLM type to ensure each construct has only one spec per solution. Solutions with multiple specs per construct from different LLMs are invalid.")
+    
+    # Extract all available LLM types from recommendations using the same logic as recommendations module
+    all_llm_types = set()
+    for project_id in selected_projects:
+        project_data = project_template_data[project_id]
+        recommendations = project_data["recommendations"]
+        
+        for rec in recommendations:
+            if rec.get("source") != "placeholder":
+                spec_name = rec.get("spec_name", "")
+                # Extract LLM type from spec name using the same logic as recommendations module
+                if spec_name:
+                    # Common LLM patterns
+                    if "claude" in spec_name.lower():
+                        if "claude-v37-sonnet" in spec_name.lower():
+                            all_llm_types.add("claude-v37-sonnet")
+                        elif "claude" in spec_name.lower():
+                            all_llm_types.add("claude")
+                    elif "gpt-4" in spec_name.lower():
+                        if "gpt-4-o" in spec_name.lower():
+                            all_llm_types.add("gpt-4-o")
+                        else:
+                            all_llm_types.add("gpt-4")
+                    elif "gpt" in spec_name.lower():
+                        all_llm_types.add("gpt")
+                    elif "gemini" in spec_name.lower():
+                        all_llm_types.add("gemini")
+                    else:
+                        # Extract first part before hyphen or underscore as potential LLM type
+                        parts = spec_name.split("-")
+                        if len(parts) >= 2:
+                            potential_llm = "-".join(parts[:2])
+                            all_llm_types.add(potential_llm)
+    
+    # Convert to sorted list for consistent ordering
+    available_llm_types = sorted(list(all_llm_types)) if all_llm_types else []
+    
+    if not available_llm_types:
+        st.warning("⚠️ No LLM types found in recommendations.")
+        return
+    
+    # LLM type selection
+    selected_llm_type = st.selectbox(
+        "Select LLM Type:",
+        options=available_llm_types,
+        index=0,
+        help="Choose which LLM type to use for all recommendations in the solution"
+    )
+    
     st.markdown("#### 📋 Select Prompt Version")
     
     # Convert to sorted list for consistent ordering
@@ -1061,6 +1113,7 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
     if selected_templates:
         st.markdown(f"#### 📊 Solutions Preview for Selected Templates")
         st.markdown(f"**Selected templates:** {', '.join(selected_templates)}")
+        st.markdown(f"**Selected LLM type:** {selected_llm_type}")
         st.markdown("**What this will create:**")
         
         # Analyze what will be created for each template and project combination
@@ -1074,10 +1127,12 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
                 project_name = project_data["project_name"]
                 recommendations = project_data["recommendations"]
                 
-                # Find all recommendations for this template in this project
+                # Find all recommendations for this template in this project, filtered by LLM type
                 template_recommendations = [
                     rec for rec in recommendations 
-                    if rec["template_name"] == selected_template and rec.get("source") != "placeholder"
+                    if (rec["template_name"] == selected_template and 
+                        rec.get("source") != "placeholder" and
+                        selected_llm_type.lower() in rec.get("spec_name", "").lower())
                 ]
                 
                 if template_recommendations:
@@ -1130,8 +1185,9 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
             st.markdown("**Solution Structure:**")
             st.markdown(f"- **{total_solutions_to_create} solutions** will be created (one per project-template combination)")
             st.markdown(f"- **{len(selected_templates)} templates** selected: {', '.join(selected_templates)}")
+            st.markdown(f"- **LLM type:** {selected_llm_type} (ensures one spec per construct)")
             st.markdown(f"- **{unique_projects} projects** involved")
-            st.markdown(f"- Each solution will contain **all constructs** from that project that have the specific template's recommendations")
+            st.markdown(f"- Each solution will contain **all constructs** from that project that have the specific template's recommendations from {selected_llm_type}")
             st.markdown(f"- Total of **{total_specs} specifications** across all solutions")
             
             # Update configuration
@@ -1140,6 +1196,7 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
                     **batch_config,
                     "source_type": "prompt_versions",
                     "selected_templates": selected_templates,  # Now multiple templates
+                    "selected_llm_type": selected_llm_type,    # Add LLM type filter
                     "selected_recommendations": all_selected_recommendations,
                     "solution_preview": solution_preview_data,
                     "total_solutions": total_solutions_to_create
@@ -1151,7 +1208,7 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
             if st.button(f"🚀 Create Solutions from Selected Templates", key="start_batch_sols_from_prompt_versions", type="primary"):
                 execute_batch_solutions()
         else:
-            st.warning(f"⚠️ No recommendations found for the selected templates in any selected project.")
+            st.warning(f"⚠️ No recommendations found for the selected templates and LLM type '{selected_llm_type}' in any selected project.")
     else:
         st.info("💡 Please select at least one template to continue.")
 

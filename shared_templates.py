@@ -139,9 +139,11 @@ DEFAULT_PROJECT_OPTIMISATION_IDS = {
     # Original default projects
     "6c47d53e-7384-44d8-be9d-c186a7af480a": "eef157cf-c8d4-4e7a-a2e5-79cf2f07be88",  # Default project 1
     "26ecc1a2-2b9c-4733-9d5d-07d0a6608686": "1ef5f3e1-6138-4236-b010-79f6cdb6c2be",  # BitmapPlusPlus
+    # "ab9e1675-e787-443c-8108-f7b5ca564912",  # BitmapPlusPlus - big_chess_board
+    # "1ef5f3e1-6138-4236-b010-79f6cdb6c2be",  # BitmapPlusPlus - chess_board
     
     # Benchmark projects
-    "114ba2fa-8bae-4e19-8f46-3fbef23b4a98": "9afc41b2-17f5-4799-90f1-1f1eb3625c42",  # BitNet-function
+    "114ba2fa-8bae-4e19-8f46-3fbef23b4a98": "05abf1c8-8ff7-457e-b7cb-25cd89130ff3",  # BitNet-function - calude3.7 (05abf1c8-8ff7-457e-b7cb-25cd89130ff3); gpt4o (9afc41b2-17f5-4799-90f1-1f1eb3625c42)
     "28334995-7488-4414-876a-fbbdd1d990f9": "d91557b7-6a75-4523-a2eb-b2ff6b6e3d91",  # llama.cpp
     "9f8f7777-f359-4f39-bfa8-6a0f4ebe473c": "af6c8049-cf3d-4379-975f-7f4247580188",  # faster-whisper
     "0126bc6f-57c0-4148-bd3e-3d30ea7c6099": "24f078c2-2c71-42ec-82e8-049edca0fa20",  # Langflow
