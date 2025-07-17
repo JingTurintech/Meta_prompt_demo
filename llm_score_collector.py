@@ -94,21 +94,21 @@ def collect_llm_scores():
                                 task = task_scores.task
                                 for model_score in task_scores.models:
                                     # model_score is CodeTaskModelScoreResponse
-                            scores_data.append({
-                                'project_id': project_id,
-                                'project_name': project_name,
-                                'construct_id': str(construct_id),
-                                        'construct_identifier': construct_identifier,
-                                'spec_id': str(spec.id),
-                                        'spec_name': spec.name if hasattr(spec, 'name') else f"spec-{spec.id[:8]}",
-                                        'task': task,
-                                        'model': model_score.name,
-                                        'score': model_score.score,
-                                        'prompt_id': str(model_score.prompt_id) if model_score.prompt_id else None,
-                                        'metric_name': 'llm_score',
-                                        'metric_measurements': str(model_score.score),
-                                        'metric_count': 1
-                            })
+                                    scores_data.append({
+                                        'project_id': project_id,
+                                        'project_name': project_name,
+                                        'construct_id': str(construct_id),
+                                                'construct_identifier': construct_identifier,
+                                        'spec_id': str(spec.id),
+                                                'spec_name': spec.name if hasattr(spec, 'name') else f"spec-{spec.id[:8]}",
+                                                'task': task,
+                                                'model': model_score.name,
+                                                'score': model_score.score,
+                                                'prompt_id': str(model_score.prompt_id) if model_score.prompt_id else None,
+                                                'metric_name': 'llm_score',
+                                                'metric_measurements': str(model_score.score),
+                                                'metric_count': 1
+                                    })
         
         if not scores_data:
             logger.error("No scores found")
