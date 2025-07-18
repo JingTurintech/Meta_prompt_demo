@@ -28,34 +28,34 @@ A comprehensive framework for meta-prompt optimization and evaluation using Stre
    ```
 
 4. Set up environment variables:
-    To run this project, you need to create a `.env` file in the project root directory with your API credentials and service endpoints. This file is used to configure Artemis and related services.
+To run this project, you need to create a `.env` file in the project root directory with your API credentials and service endpoints. This file is used to configure Artemis and related services.
 
-    **Example .env file:**
-    ```
-    THANOS_HOST=artemis.turintech.ai
-    THANOS_HTTPS=true
-    THANOS_PORT=443
-    THANOS_POSTFIX=/turintech-thanos/api
-    THANOS_CLIENT_ID=your_client_id
-    THANOS_CLIENT_SECRET=your_client_secret
-    THANOS_GRANT_TYPE=password
-    THANOS_USERNAME=your_username
-    THANOS_PASSWORD=your_password
+**Example .env file:**
+```
+THANOS_HOST=artemis.turintech.ai
+THANOS_HTTPS=true
+THANOS_PORT=443
+THANOS_POSTFIX=/turintech-thanos/api
+THANOS_CLIENT_ID=your_client_id
+THANOS_CLIENT_SECRET=your_client_secret
+THANOS_GRANT_TYPE=password
+THANOS_USERNAME=your_username
+THANOS_PASSWORD=your_password
 
-    FALCON_HOST=artemis.turintech.ai
-    FALCON_HTTPS=true
-    FALCON_PORT=443
-    FALCON_POSTFIX=/api
+FALCON_HOST=artemis.turintech.ai
+FALCON_HTTPS=true
+FALCON_PORT=443
+FALCON_POSTFIX=/api
 
-    VISION_HOST=artemis.turintech.ai
-    VISION_HTTPS=true
-    VISION_PORT=443
-    VISION_POSTFIX=/api
-    ```
+VISION_HOST=artemis.turintech.ai
+VISION_HTTPS=true
+VISION_PORT=443
+VISION_POSTFIX=/api
+```
 
-    - Replace the values with your actual credentials.
-    - **Do not commit your `.env` file to version control.**
-    - The application will automatically load these variables using `python-dotenv`.
+- Replace the values with your actual credentials.
+- **Do not commit your `.env` file to version control.**
+- The application will automatically load these variables using `python-dotenv`.
 
 ## Usage
 

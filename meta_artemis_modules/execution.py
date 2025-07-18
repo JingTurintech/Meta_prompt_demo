@@ -8,7 +8,8 @@ import asyncio
 from loguru import logger
 from typing import Dict, Any, List, Optional
 from uuid import UUID
-from benchmark_evaluator_meta_artemis import MetaArtemisEvaluator, LLMType
+from meta_artemis_modules.evaluator import MetaArtemisEvaluator
+from vision_models.service.llm import LLMType
 from artemis_client.falcon.client import FalconClient
 from .utils import get_session_state, update_session_state
 

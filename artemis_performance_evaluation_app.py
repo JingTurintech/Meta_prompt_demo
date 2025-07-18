@@ -2429,17 +2429,31 @@ def configure_batch_analysis():
                                 "spec_id": "Original",
                                 "prompt_version": "original",
                                 "num_specs_in_solution": 0,
-                                "num_runtime_measurements": 0
+                                "num_runtime_measurements": 0  # Will be updated after extracting measurements
                             }
                             
                             # Extract runtime measurements from results summary directly
                             runtime_measurements = []
                             if results_summary and isinstance(results_summary, dict):
-                                for key, value in results_summary.items():
-                                    if isinstance(value, dict) and "runtime" in value:
-                                        runtime_data = value.get("runtime", {})
-                                        if isinstance(runtime_data, dict) and "values" in runtime_data:
-                                            runtime_measurements.extend(runtime_data["values"])
+                                # Look for runtime_metrics at the top level
+                                runtime_metrics = results_summary.get('runtime_metrics', {})
+                                if runtime_metrics:
+                                    for metric_name, metric_data in runtime_metrics.items():
+                                        if isinstance(metric_data, dict) and "values" in metric_data:
+                                            runtime_measurements.extend([float(v) for v in metric_data["values"] if isinstance(v, (int, float))])
+                                            break  # Only take the first set of measurements found
+                                
+                                # If no runtime_metrics found, look in the old structure
+                                if not runtime_measurements:
+                                    for key, value in results_summary.items():
+                                        if isinstance(value, dict) and "runtime" in value:
+                                            runtime_data = value.get("runtime", {})
+                                            if isinstance(runtime_data, dict) and "values" in runtime_data:
+                                                runtime_measurements.extend(runtime_data["values"])
+                                                break
+                            
+                            # Update the count in base_row
+                            base_row["num_runtime_measurements"] = len(runtime_measurements)
                             
                             # Create a row for runtime measurements
                             runtime_row = base_row.copy()
@@ -2478,13 +2492,13 @@ def configure_batch_analysis():
                         )
                         
                         if is_version_level:
-                            # For version-level solutions, combine measurements from all constructs
+                            # For version-level solutions, extract runtime measurements from the FIRST construct only
+                            # This avoids multiplying measurements by the number of specs
                             all_runtime_measurements = []
-                            for spec in specs:
-                                construct_id = spec.get("construct_id", "")
-                                measurements = extract_runtime_from_solution_results(results_summary, construct_id)
-                                if measurements:
-                                    all_runtime_measurements.extend(measurements)
+                            
+                            # Use the first construct's measurements to represent the solution
+                            first_construct_id = specs[0].get("construct_id", "")
+                            all_runtime_measurements = extract_runtime_from_solution_results(results_summary, first_construct_id)
                             
                             # Create base row data for version-level solution
                             base_row = {
