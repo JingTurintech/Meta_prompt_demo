@@ -2434,6 +2434,22 @@ def configure_batch_analysis():
                     project_info = cached_data.get("project_info", {})
                     project_name = project_info.get("name", "Unknown Project")
                     
+                    # Debug: Log optimization IDs being processed
+                    optimization_ids_in_solutions = set()
+                    for solution in solutions_with_data:
+                        opt_id = solution.get("optimization_id", "")
+                        if opt_id:
+                            optimization_ids_in_solutions.add(opt_id)
+                    
+                    logger.info(f"🔍 CSV Export: Processing {len(solutions_with_data)} solutions for project {project_name}")
+                    logger.info(f"🔍 CSV Export: Optimization IDs in solutions: {list(optimization_ids_in_solutions)}")
+                    
+                    # Debug: Log selected optimizations from batch config
+                    if "selected_optimizations" in batch_config:
+                        logger.info(f"🔍 CSV Export: Selected optimizations from batch config: {batch_config['selected_optimizations']}")
+                    else:
+                        logger.warning(f"⚠️ CSV Export: No selected_optimizations found in batch_config!")
+                    
                     for solution in solutions_with_data:
                         solution_id = solution.get("solution_id", "")
                         optimization_id = solution.get("optimization_id", "")
