@@ -7,7 +7,8 @@ import streamlit as st
 import numpy as np
 from loguru import logger
 from typing import Dict, Any, List, Optional
-from benchmark_evaluator_meta_artemis import MetaArtemisEvaluator, LLMType
+from meta_artemis_modules.evaluator import MetaArtemisEvaluator
+from vision_models.service.llm import LLMType
 from meta_artemis_modules.shared_templates import (
     DEFAULT_PROJECT_OPTIMISATION_IDS,
     DEFAULT_META_PROMPT_LLM,
@@ -42,7 +43,8 @@ async def get_project_info_async(project_id: str):
         
         # Get solutions from the default optimization ID
         logger.info("🔍 Getting solutions from default optimization")
-        optimization_id = DEFAULT_PROJECT_OPTIMISATION_IDS.get(project_id)
+        optimization_ids = DEFAULT_PROJECT_OPTIMISATION_IDS.get(project_id, [])
+        optimization_id = optimization_ids[0] if optimization_ids else None
         if optimization_id:
             logger.info(f"✅ Found default optimization ID: {optimization_id}")
             try:
@@ -155,7 +157,7 @@ async def get_project_info_async(project_id: str):
         return None, None, None
 
 
-async def get_existing_solutions_async(project_id: str):
+async def get_existing_solutions_async(project_id: str, selected_optimization_ids: Optional[List[str]] = None):
     """Get existing solutions and optimizations from Artemis"""
     logger.info(f"🔍 Getting existing solutions for project: {project_id}")
     
@@ -195,19 +197,25 @@ async def get_existing_solutions_async(project_id: str):
                 except Exception as e:
                     logger.warning(f"Could not get AI run {rec['ai_run_id']}: {str(e)}")
         
-        # Add project-specific optimization IDs first, then fallbacks
-        from meta_artemis_modules.shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
-        
-        common_optimization_ids = []
-        
-        # Add project-specific optimization first if available
-        if project_id in DEFAULT_PROJECT_OPTIMISATION_IDS:
-            common_optimization_ids.append(DEFAULT_PROJECT_OPTIMISATION_IDS[project_id])
-            logger.info(f"🎯 Using default optimization ID for project {project_id}: {DEFAULT_PROJECT_OPTIMISATION_IDS[project_id]}")
+        # Use selected optimization IDs if provided, otherwise use project defaults
+        if selected_optimization_ids:
+            optimization_ids.update(selected_optimization_ids)
+            logger.info(f"🎯 Using selected optimization IDs: {selected_optimization_ids}")
         else:
-            logger.warning(f"⚠️ No default optimization ID found for project {project_id}. Add it to DEFAULT_PROJECT_OPTIMISATION_IDS in meta_artemis_modules/shared_templates.py")
-        
-        optimization_ids.update(common_optimization_ids)
+            # Add project-specific optimization IDs first, then fallbacks
+            from meta_artemis_modules.shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
+            
+            common_optimization_ids = []
+            
+            # Add project-specific optimization first if available
+            if project_id in DEFAULT_PROJECT_OPTIMISATION_IDS:
+                project_optimization_ids = DEFAULT_PROJECT_OPTIMISATION_IDS[project_id]
+                common_optimization_ids.extend(project_optimization_ids)
+                logger.info(f"🎯 Using default optimization IDs for project {project_id}: {project_optimization_ids}")
+            else:
+                logger.warning(f"⚠️ No default optimization ID found for project {project_id}. Add it to DEFAULT_PROJECT_OPTIMISATION_IDS in meta_artemis_modules/shared_templates.py")
+            
+            optimization_ids.update(common_optimization_ids)
         
         logger.info(f"🔍 Will search for solutions in optimization IDs: {list(optimization_ids)}")
         
@@ -344,6 +352,98 @@ async def get_existing_solutions_async(project_id: str):
     except Exception as e:
         logger.error(f"❌ Error getting existing solutions: {str(e)}")
         return None, [], []
+
+
+def get_optimization_configurations():
+    """Get optimization configurations with project context"""
+    from meta_artemis_modules.shared_templates import DEFAULT_PROJECT_OPTIMISATION_IDS
+    
+    # Define optimization names and descriptions - these would normally come from API
+    optimization_descriptions = {
+        "eef157cf-c8d4-4e7a-a2e5-79cf2f07be88": {
+            "name": "Default Optimization",
+            "description": "Default optimization for testing and development"
+        },
+        "1ef5f3e1-6138-4236-b010-79f6cdb6c2be": {
+            "name": "Chess Board Optimization",
+            "description": "Optimization for chess board processing"
+        },
+        "ab9e1675-e787-443c-8108-f7b5ca564912": {
+            "name": "Big Chess Board Optimization", 
+            "description": "Optimization for large chess board processing"
+        },
+        "05abf1c8-8ff7-457e-b7cb-25cd89130ff3": {
+            "name": "BitNet Claude3.7 Optimization",
+            "description": "BitNet optimization using Claude 3.7 Sonnet"
+        },
+        "9afc41b2-17f5-4799-90f1-1f1eb3625c42": {
+            "name": "BitNet GPT-4o Optimization",
+            "description": "BitNet optimization using GPT-4o"
+        },
+        "d91557b7-6a75-4523-a2eb-b2ff6b6e3d91": {
+            "name": "llama.cpp Optimization",
+            "description": "Performance optimization for llama.cpp"
+        },
+        "af6c8049-cf3d-4379-975f-7f4247580188": {
+            "name": "faster-whisper Optimization",
+            "description": "Speed optimization for faster-whisper"
+        },
+        "24f078c2-2c71-42ec-82e8-049edca0fa20": {
+            "name": "Langflow Optimization",
+            "description": "Flow optimization for Langflow"
+        },
+        "3f9da777-66e4-4b71-958f-abdb7456fadb": {
+            "name": "Whisper GPU Optimization",
+            "description": "GPU acceleration optimization for Whisper"
+        },
+        "f6eccc1a-6b81-4b40-bd52-5d6464e53e58": {
+            "name": "QuantLib 2.0 Optimization",
+            "description": "Performance optimization for QuantLib 2.0"
+        },
+        "a46ff34d-7037-4d79-81b1-4d7ab680cd4f": {
+            "name": "QuantLib Optimization",
+            "description": "Performance optimization for QuantLib"
+        },
+        "c4e3ef1f-c571-4de3-b474-a435e721a5f2": {
+            "name": "csv-parser Optimization",
+            "description": "CSV parsing performance optimization"
+        },
+        "e8f76f2e-5329-4cba-a122-1992fba209c2": {
+            "name": "BitmapPlusPlus Optimization",
+            "description": "Bitmap processing optimization"
+        },
+        "f2474897-bbee-43df-a7cf-c862034233aa": {
+            "name": "rpcs3 Optimization",
+            "description": "PlayStation 3 emulator optimization"
+        },
+        "25f1f709-0b46-4654-b9dd-1ed187b7a349": {
+            "name": "BitNet-file Optimization",
+            "description": "BitNet file processing optimization"
+        },
+        "787e1843-6a34-4266-a3c2-de6a82bf6793": {
+            "name": "AABitNet Optimization",
+            "description": "AABitNet neural network optimization"
+        }
+    }
+    
+    # Get project configurations
+    project_configs = get_project_configurations()
+    
+    # Create optimization configurations with project context
+    optimization_configs = {}
+    for project_id, optimization_ids in DEFAULT_PROJECT_OPTIMISATION_IDS.items():
+        if project_id in project_configs:
+            project_info = project_configs[project_id]
+            for optimization_id in optimization_ids:
+                optimization_configs[optimization_id] = {
+                    "project_id": project_id,
+                    "project_name": project_info["name"],
+                    "project_description": project_info["description"],
+                    "optimization_name": optimization_descriptions.get(optimization_id, {}).get("name", f"Optimization {optimization_id[:8]}..."),
+                    "optimization_description": optimization_descriptions.get(optimization_id, {}).get("description", f"Optimization with ID {optimization_id}")
+                }
+    
+    return optimization_configs
 
 
 def get_project_configurations():

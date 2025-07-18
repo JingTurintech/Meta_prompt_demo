@@ -6,7 +6,7 @@ Handles creating solutions from recommendations and managing solution lifecycles
 import streamlit as st
 from loguru import logger
 from typing import Dict, Any, List, Optional
-from benchmark_evaluator_meta_artemis import MetaArtemisEvaluator, LLMType
+from meta_artemis_modules.evaluator import MetaArtemisEvaluator
 from .utils import get_session_state, update_session_state
 import pandas as pd
 import json

@@ -29,7 +29,7 @@ from meta_artemis_modules.utils import (
     reset_batch_session_state
 )
 from meta_artemis_modules.project_manager import (
-    get_project_info_async, get_existing_solutions_async, get_project_configurations, validate_project_id
+    get_project_info_async, get_existing_solutions_async, get_project_configurations, get_optimization_configurations, validate_project_id
 )
 from meta_artemis_modules.recommendations import (
     generate_recommendations_async, generate_recommendations_step2, get_recommendation_summary,
@@ -49,9 +49,8 @@ from meta_artemis_modules.visualization import (
 )
 
 # Import from existing modules
-from benchmark_evaluator_meta_artemis import (
-    MetaArtemisEvaluator, LLMType, save_evaluation_results, 
-    load_evaluation_results, RecommendationResult, SolutionResult
+from meta_artemis_modules.evaluator import (
+    MetaArtemisEvaluator, RecommendationResult, SolutionResult
 )
 from meta_artemis_modules.shared_templates import (
     OPTIMIZATION_TASKS, META_PROMPT_TEMPLATES, AVAILABLE_LLMS, DEFAULT_PROJECT_OPTIMISATION_IDS,
@@ -310,74 +309,136 @@ def step_2_batch_configuration():
             st.markdown("---")
             st.markdown("### Configure New Batch Analysis")
     
-    # Get all project configurations
-    project_configurations = get_project_configurations()
+    # Get all optimization configurations
+    optimization_configurations = get_optimization_configurations()
     
-    # Initialize project info cache in session state if not exists
-    if "project_info_cache" not in st.session_state:
-        st.session_state.project_info_cache = {}
+    # Initialize optimization info cache in session state if not exists
+    if "optimization_info_cache" not in st.session_state:
+        st.session_state.optimization_info_cache = {}
     
     # Add select/deselect all buttons
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Select All"):
-            for project_id in project_configurations.keys():
-                st.session_state[f"select_{project_id}"] = True
+            for optimization_id in optimization_configurations.keys():
+                st.session_state[f"select_{optimization_id}"] = True
     with col2:
         if st.button("Deselect All"):
-            for project_id in project_configurations.keys():
-                st.session_state[f"select_{project_id}"] = False
+            for optimization_id in optimization_configurations.keys():
+                st.session_state[f"select_{optimization_id}"] = False
     
-    st.markdown("Select projects to process:")
+    st.markdown("Select optimizations to process:")
     
-    # Create project selection list
-    selected_projects = []
+    # Create optimization selection list
+    selected_optimizations = []
+    selected_projects = []  # Track unique projects for backward compatibility
     
-    # Style for the project list
+    # Style for the optimization list
     st.markdown("""
         <style>
-        .project-item {
+        .optimization-item {
             padding: 8px;
             margin: 4px 0;
             border-radius: 4px;
         }
-        .project-item:hover {
+        .optimization-item:hover {
             background-color: #f0f2f6;
         }
         </style>
     """, unsafe_allow_html=True)
     
-    # Display projects as a list with checkboxes
-    for project_id, project_config in project_configurations.items():
+    # Prepare data for table display
+    table_data = []
+    for optimization_id, opt_config in optimization_configurations.items():
         # Initialize checkbox state if not exists
-        if f"select_{project_id}" not in st.session_state:
-            st.session_state[f"select_{project_id}"] = False
+        if f"select_{optimization_id}" not in st.session_state:
+            st.session_state[f"select_{optimization_id}"] = False
         
-        col1, col2 = st.columns([1, 11])
-        with col1:
-            is_selected = st.checkbox(
-                "Select project",  # Proper label
-                key=f"select_{project_id}",
-                value=st.session_state[f"select_{project_id}"],
-                label_visibility="collapsed"  # Hide the label but keep it for accessibility
-            )
-        with col2:
-            # Get default optimization ID for this project
-            default_opt_id = DEFAULT_PROJECT_OPTIMISATION_IDS.get(project_id)
-            if default_opt_id:
-                st.markdown(f"**{project_config['name']}** [@artemis](https://artemis.turintech.ai/projects/{project_id}) | Optimization [@artemis](https://artemis.turintech.ai/optimisations/{default_opt_id}) - {project_config['description']}")
-            else:
-                st.markdown(f"**{project_config['name']}** [@artemis](https://artemis.turintech.ai/projects/{project_id}) - {project_config['description']}")
-        
-        if is_selected:
-            selected_projects.append(project_id)
+        table_data.append({
+            "Select": st.session_state[f"select_{optimization_id}"],
+            "Project": opt_config["project_name"],
+            "Project Link": f"https://artemis.turintech.ai/projects/{opt_config['project_id']}",
+            "Optimization": opt_config["optimization_name"],
+            "Optimization Link": f"https://artemis.turintech.ai/optimisations/{optimization_id}",
+            "Description": opt_config["optimization_description"],
+            "Full Project ID": opt_config["project_id"],
+            "Full Optimization ID": optimization_id
+        })
     
-    if not selected_projects:
-        st.warning("⚠️ Please select at least one project to continue")
+    # Display interactive table
+    st.markdown("**Select optimizations to process:**")
+    edited_data = st.data_editor(
+        table_data,
+        column_config={
+            "Select": st.column_config.CheckboxColumn(
+                "Select",
+                help="Select optimizations to process",
+                default=False,
+                width="small"
+            ),
+            "Project": st.column_config.TextColumn(
+                "Project",
+                help="Project name",
+                width="medium"
+            ),
+            "Project Link": st.column_config.LinkColumn(
+                "Project Link",
+                help="Link to project in Artemis",
+                width="small"
+            ),
+            "Optimization": st.column_config.TextColumn(
+                "Optimization",
+                help="Optimization name",
+                width="medium"
+            ),
+            "Optimization Link": st.column_config.LinkColumn(
+                "Optimization Link",
+                help="Link to optimization in Artemis",
+                width="small"
+            ),
+            "Description": st.column_config.TextColumn(
+                "Description",
+                help="Optimization description",
+                width="large"
+            ),
+            "Full Project ID": None,  # Hide this column
+            "Full Optimization ID": None  # Hide this column
+        },
+        disabled=["Project", "Project Link", "Optimization", "Optimization Link", "Description"],
+        hide_index=True,
+        use_container_width=True,
+        key="optimization_selection_table"
+    )
+    
+    # Update session state and collect selected items
+    selected_projects_set = set()
+    for i, row in enumerate(edited_data):
+        optimization_id = row["Full Optimization ID"]
+        project_id = row["Full Project ID"]
+        
+        # Update session state
+        st.session_state[f"select_{optimization_id}"] = row["Select"]
+        
+        # Collect selected items
+        if row["Select"]:
+            selected_optimizations.append(optimization_id)
+            selected_projects_set.add(project_id)
+    
+    # Convert set to list for backward compatibility
+    selected_projects = list(selected_projects_set)
+    
+    if not selected_optimizations:
+        st.warning("⚠️ Please select at least one optimization to continue")
         return
     
-    # Update batch session state with selected projects
-    update_batch_session_state({"selected_projects": selected_projects})
+    # Show selection summary
+    st.success(f"✅ Selected {len(selected_optimizations)} optimizations from {len(selected_projects)} projects")
+    
+    # Update batch session state with selected optimizations and projects
+    update_batch_session_state({
+        "selected_optimizations": selected_optimizations,
+        "selected_projects": selected_projects  # Keep for backward compatibility
+    })
     
     # Global batch configuration
     st.markdown("### ⚙️ Global Batch Configuration")
@@ -779,7 +840,11 @@ def configure_batch_recommendations():
                 selected_in_project = [c for c in all_selected_constructs if c["project_id"] == project_id]
                 st.markdown(f"**{project_config['name']}**")
                 st.markdown(f"- Description: {project_config['description']}")
-                st.markdown(f"- Default Optimization: {DEFAULT_PROJECT_OPTIMISATION_IDS.get(project_id, 'None')}")
+                default_opts = DEFAULT_PROJECT_OPTIMISATION_IDS.get(project_id, [])
+                if default_opts:
+                    st.markdown(f"- Default Optimization: {default_opts[0]}")
+                else:
+                    st.markdown(f"- Default Optimization: None")
                 st.markdown(f"- Selected Constructs: {len(selected_in_project)}")
                 for construct in selected_in_project:
                     st.markdown(f"  - {construct['rank']}: {construct['construct_id'][:12]}...")
@@ -919,7 +984,6 @@ def configure_solutions_from_recommendations(state, batch_config, selected_proje
 def configure_solutions_from_prompt_versions(state, batch_config, selected_projects):
     """Configure solution creation from all recommendations of a specific prompt version"""
     st.markdown("#### 🎯 Create Solutions from Prompt Versions")
-    st.info("💡 **Prompt Version Solutions**: Create solutions that combine ALL recommendations from a specific prompt version (e.g., Enhanced Template) across multiple constructs. For example, if you have 10 constructs and select 'Enhanced Template', this will create a solution with 10 specs - all using the Enhanced Template recommendations.")
     
     # Cache recommendations in session state to avoid refetching
     if "cached_project_recommendations" not in st.session_state:
@@ -1258,6 +1322,10 @@ def configure_batch_evaluation():
     state = get_batch_session_state()
     batch_config = state["batch_evaluation"]
     
+    # Ensure selected_optimizations are included in batch_config
+    if "selected_optimizations" not in batch_config and "selected_optimizations" in state:
+        batch_config["selected_optimizations"] = state["selected_optimizations"]
+    
     # Source type selection
     source_type = st.radio(
         "Source for Evaluation:",
@@ -1325,7 +1393,15 @@ def configure_batch_evaluation():
             if project_id not in st.session_state.existing_solutions_cache:
                 with st.spinner(f"Loading existing solutions for {project_config['name']}..."):
                     try:
-                        project_info, existing_optimizations, existing_solutions = asyncio.run(get_existing_solutions_async(project_id))
+                        # Get selected optimization IDs for this project
+                        selected_opts_for_project = []
+                        if "selected_optimizations" in batch_config:
+                            optimization_configs = get_optimization_configurations()
+                            for opt_id in batch_config["selected_optimizations"]:
+                                if opt_id in optimization_configs and optimization_configs[opt_id]["project_id"] == project_id:
+                                    selected_opts_for_project.append(opt_id)
+                        
+                        project_info, existing_optimizations, existing_solutions = asyncio.run(get_existing_solutions_async(project_id, selected_opts_for_project))
                         st.session_state.existing_solutions_cache[project_id] = {
                             "project_info": project_info,
                             "optimizations": existing_optimizations,
@@ -2110,6 +2186,10 @@ def configure_batch_analysis():
 
     state = get_batch_session_state()
     batch_config = state["batch_analysis"]
+    
+    # Ensure selected_optimizations are included in batch_config
+    if "selected_optimizations" not in batch_config and "selected_optimizations" in state:
+        batch_config["selected_optimizations"] = state["selected_optimizations"]
     selected_projects = state.get("selected_projects", [])
     
     if not selected_projects:
@@ -2200,8 +2280,16 @@ def configure_batch_analysis():
         if project_id not in st.session_state.analysis_data_cache:
             with st.spinner(f"Analyzing solutions for {project_config['name']}..."):
                 try:
+                    # Get selected optimization IDs for this project
+                    selected_opts_for_project = []
+                    if "selected_optimizations" in batch_config:
+                        optimization_configs = get_optimization_configurations()
+                        for opt_id in batch_config["selected_optimizations"]:
+                            if opt_id in optimization_configs and optimization_configs[opt_id]["project_id"] == project_id:
+                                selected_opts_for_project.append(opt_id)
+                    
                     # Get existing solutions
-                    project_info, existing_optimizations, existing_solutions = asyncio.run(get_existing_solutions_async(project_id))
+                    project_info, existing_optimizations, existing_solutions = asyncio.run(get_existing_solutions_async(project_id, selected_opts_for_project))
                     
                     # Filter solutions with runtime data
                     solutions_with_data = []
@@ -2656,7 +2744,8 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
     
     # Get top-ranked constructs (Rank 1-10) using existing filter function
     try:
-        from benchmark_evaluator_meta_artemis import MetaArtemisEvaluator, LLMType
+        from meta_artemis_modules.evaluator import MetaArtemisEvaluator
+        from vision_models.service.llm import LLMType
         evaluator = MetaArtemisEvaluator(
             task_name="runtime_performance",
             meta_prompt_llm_type=LLMType(DEFAULT_META_PROMPT_LLM),

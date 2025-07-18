@@ -137,24 +137,22 @@ Your response should contain only A, B, or TIE, nothing else."""
 # Default project and optimization IDs mapping
 DEFAULT_PROJECT_OPTIMISATION_IDS = {
     # Original default projects
-    "6c47d53e-7384-44d8-be9d-c186a7af480a": "eef157cf-c8d4-4e7a-a2e5-79cf2f07be88",  # Default project 1
-    "26ecc1a2-2b9c-4733-9d5d-07d0a6608686": "1ef5f3e1-6138-4236-b010-79f6cdb6c2be",  # BitmapPlusPlus
-    # "ab9e1675-e787-443c-8108-f7b5ca564912",  # BitmapPlusPlus - big_chess_board
-    # "1ef5f3e1-6138-4236-b010-79f6cdb6c2be",  # BitmapPlusPlus - chess_board
+    "6c47d53e-7384-44d8-be9d-c186a7af480a": ["eef157cf-c8d4-4e7a-a2e5-79cf2f07be88"],  # Default project 1
+    "26ecc1a2-2b9c-4733-9d5d-07d0a6608686": ["1ef5f3e1-6138-4236-b010-79f6cdb6c2be", "ab9e1675-e787-443c-8108-f7b5ca564912"],  # BitmapPlusPlus - chess_board, big_chess_board
     
     # Benchmark projects
-    "114ba2fa-8bae-4e19-8f46-3fbef23b4a98": "05abf1c8-8ff7-457e-b7cb-25cd89130ff3",  # BitNet-function - calude3.7 (05abf1c8-8ff7-457e-b7cb-25cd89130ff3); gpt4o (9afc41b2-17f5-4799-90f1-1f1eb3625c42)
-    "28334995-7488-4414-876a-fbbdd1d990f9": "d91557b7-6a75-4523-a2eb-b2ff6b6e3d91",  # llama.cpp
-    "9f8f7777-f359-4f39-bfa8-6a0f4ebe473c": "af6c8049-cf3d-4379-975f-7f4247580188",  # faster-whisper
-    "0126bc6f-57c0-4148-bd3e-3d30ea7c6099": "24f078c2-2c71-42ec-82e8-049edca0fa20",  # Langflow
-    "1cf9f904-d506-4a27-969f-ae6db943eb55": "3f9da777-66e4-4b71-958f-abdb7456fadb",  # Whisper GPU
-    "17789b06-49be-4dec-b2bc-2d741a350328": "f6eccc1a-6b81-4b40-bd52-5d6464e53e58",  # QuantLib 2.0
-    "f28e9994-4b44-446c-8973-7ab2037f1f55": "a46ff34d-7037-4d79-81b1-4d7ab680cd4f",  # QuantLib
-    "a732b310-6ec1-44b5-bf4d-ac4b3618a62d": "c4e3ef1f-c571-4de3-b474-a435e721a5f2",  # csv-parser
-    "372d1ebb-f420-4580-8da3-17d21f3664f3": "e8f76f2e-5329-4cba-a122-1992fba209c2",  # BitmapPlusPlus
-    "074babc9-86c9-48c5-ac96-4d350a36c9ad": "f2474897-bbee-43df-a7cf-c862034233aa",  # rpcs3
-    "cd204583-ca0a-4ee7-b837-e5115712902a": "25f1f709-0b46-4654-b9dd-1ed187b7a349",  # BitNet-file
-    "a3d17dee-6bed-40fb-95a1-f704ba5486bd": "787e1843-6a34-4266-a3c2-de6a82bf6793",  # AABitNet
+    "114ba2fa-8bae-4e19-8f46-3fbef23b4a98": ["05abf1c8-8ff7-457e-b7cb-25cd89130ff3", "9afc41b2-17f5-4799-90f1-1f1eb3625c42"],  # BitNet-function - claude3.7, gpt4o
+    "28334995-7488-4414-876a-fbbdd1d990f9": ["d91557b7-6a75-4523-a2eb-b2ff6b6e3d91"],  # llama.cpp
+    "9f8f7777-f359-4f39-bfa8-6a0f4ebe473c": ["af6c8049-cf3d-4379-975f-7f4247580188"],  # faster-whisper
+    "0126bc6f-57c0-4148-bd3e-3d30ea7c6099": ["24f078c2-2c71-42ec-82e8-049edca0fa20"],  # Langflow
+    "1cf9f904-d506-4a27-969f-ae6db943eb55": ["3f9da777-66e4-4b71-958f-abdb7456fadb"],  # Whisper GPU
+    "17789b06-49be-4dec-b2bc-2d741a350328": ["f6eccc1a-6b81-4b40-bd52-5d6464e53e58"],  # QuantLib 2.0
+    "f28e9994-4b44-446c-8973-7ab2037f1f55": ["a46ff34d-7037-4d79-81b1-4d7ab680cd4f"],  # QuantLib
+    "a732b310-6ec1-44b5-bf4d-ac4b3618a62d": ["c4e3ef1f-c571-4de3-b474-a435e721a5f2"],  # csv-parser
+    "372d1ebb-f420-4580-8da3-17d21f3664f3": ["e8f76f2e-5329-4cba-a122-1992fba209c2"],  # BitmapPlusPlus
+    "074babc9-86c9-48c5-ac96-4d350a36c9ad": ["f2474897-bbee-43df-a7cf-c862034233aa"],  # rpcs3
+    "cd204583-ca0a-4ee7-b837-e5115712902a": ["25f1f709-0b46-4654-b9dd-1ed187b7a349"],  # BitNet-file
+    "a3d17dee-6bed-40fb-95a1-f704ba5486bd": ["787e1843-6a34-4266-a3c2-de6a82bf6793"],  # AABitNet
     }
 
 # Default batch configuration settings

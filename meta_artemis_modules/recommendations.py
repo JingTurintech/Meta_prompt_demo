@@ -7,9 +7,8 @@ import streamlit as st
 import asyncio
 from loguru import logger
 from typing import Dict, Any, List, Optional, Callable
-from benchmark_evaluator_meta_artemis import (
-    MetaArtemisEvaluator, LLMType, RecommendationResult
-)
+from meta_artemis_modules.evaluator import MetaArtemisEvaluator, RecommendationResult
+from vision_models.service.llm import LLMType
 from meta_artemis_modules.shared_templates import META_PROMPT_TEMPLATES, DEFAULT_PROJECT_OPTIMISATION_IDS
 from .utils import get_session_state
 from datetime import datetime
@@ -819,7 +818,8 @@ def get_top_construct_recommendations(
     
     try:
         # Create evaluator to get existing recommendations using the correct method
-        from benchmark_evaluator_meta_artemis import MetaArtemisEvaluator, LLMType
+        from meta_artemis_modules.evaluator import MetaArtemisEvaluator
+        from vision_models.service.llm import LLMType
         evaluator = MetaArtemisEvaluator(
             task_name="runtime_performance",
             meta_prompt_llm_type=LLMType("gpt-4-o"),
