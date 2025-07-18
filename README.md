@@ -113,6 +113,50 @@ streamlit run llm_runtime_correlation_analysis.py
 
 
 
+## Falcon Client Functions Reference
+
+This section provides a comprehensive overview of all Falcon client functions used throughout the application, their locations, and purposes.
+
+| **Function** | **Location** | **Purpose** | **Usage Context** |
+|-------------|-------------|-------------|-------------------|
+| **`authenticate()`** | `meta_artemis_modules/evaluator.py:126` | Authenticate with Artemis platform | Initial setup when creating evaluator instance |
+| **`get_project(project_id)`** | `meta_artemis_modules/evaluator.py:147` | Get project information and metadata | Fetching project details, name, description, language |
+| **`get_constructs_info(project_id)`** | `meta_artemis_modules/evaluator.py:151`<br>`meta_artemis_modules/recommendations.py:689` | Get all constructs (code segments) in a project | Loading project structure, finding optimizable code segments |
+| **`get_spec(spec_id, ...)`** | `meta_artemis_modules/evaluator.py:305, 429, 582`<br>`meta_artemis_modules/evaluator.py:1488, 1495` | Get detailed specification of a construct | Retrieving original and optimized code versions |
+| **`get_optimisation(optimization_id)`** | `meta_artemis_modules/project_manager.py:51, 227`<br>`meta_artemis_modules/evaluator.py:711` | Get optimization configuration details | Loading optimization settings and parameters |
+| **`get_solutions(optimization_id, ...)`** | `meta_artemis_modules/project_manager.py:56, 243` | Get all solutions for an optimization | Loading existing solutions for analysis and evaluation |
+| **`get_solution(solution_id)`** | `artemis_performance_evaluation_app.py:2065`<br>`meta_artemis_modules/evaluator.py:732, 753, 782, 883, 904, 1006, 1027` | Get detailed solution information | Checking solution status, retrieving results and metrics |
+| **`add_prompt(prompt_request, project_id)`** | `meta_artemis_modules/evaluator.py:361, 514, 1070` | Add meta-prompt to project | Creating optimization prompts for LLM-based optimization |
+| **`execute_recommendation_task(request, ...)`** | `meta_artemis_modules/evaluator.py:377, 530` | Execute optimization recommendation | Running LLM-based code optimization tasks |
+| **`get_process(process_id)`** | `meta_artemis_modules/evaluator.py:399, 552, 688, 809` | Get process status and results | Monitoring long-running optimization processes |
+| **`add_solution(solution_request)`** | `meta_artemis_modules/solutions.py:209, 357, 422`<br>`meta_artemis_modules/evaluator.py:843, 964` | Create new solution in optimization | Adding optimized code solutions to projects |
+| **`evaluate_solution(solution_id, ...)`** | `artemis_performance_evaluation_app.py:2053`<br>`meta_artemis_modules/evaluator.py:740, 870, 993` | Start solution evaluation/benchmarking | Running performance evaluations on solutions |
+| **`get_ai_application(ai_run_id)`** | `meta_artemis_modules/project_manager.py:191`<br>`meta_artemis_modules/evaluator.py:1405` | Get AI application run details | Retrieving LLM execution information and metadata |
+| **`get_prompt(prompt_id)`** | `meta_artemis_modules/evaluator.py:1413` | Get prompt details | Retrieving prompt text and configuration |
+
+### Key Workflows
+
+**Project Discovery Flow:**
+1. `get_project()` → Get basic project information
+2. `get_constructs_info()` → Load all code constructs
+3. `get_spec()` → Get detailed code for specific constructs
+
+**Solution Management Flow:**
+1. `get_optimisation()` → Load optimization configuration
+2. `get_solutions()` → Get all solutions in optimization
+3. `get_solution()` → Get detailed solution information
+
+**Optimization Pipeline:**
+1. `add_prompt()` → Create meta-prompt
+2. `execute_recommendation_task()` → Run LLM optimization
+3. `get_process()` → Monitor optimization progress
+4. `add_solution()` → Save optimized code
+
+**Evaluation Workflow:**
+1. `add_solution()` → Create solution (if needed)
+2. `evaluate_solution()` → Start performance evaluation
+3. `get_solution()` → Check evaluation results
+
 ## Remote Artemis Runner Server Management
 
 This project includes a remote Ubuntu server (35.189.66.83) running an Artemis custom runner in a Docker container.
