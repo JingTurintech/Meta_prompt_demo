@@ -934,6 +934,7 @@ def configure_solutions_from_recommendations(state, batch_config, selected_proje
         if project_id not in st.session_state.cached_project_recommendations:
             with st.spinner(f"Loading recommendations for {project_config['name']}..."):
                 # Get project info and specs
+                import asyncio
                 project_info, project_specs, _ = asyncio.run(get_project_info_async(project_id))
                 
                 # Get recommendations from state if available
@@ -1009,6 +1010,7 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
         if project_id not in st.session_state.cached_project_recommendations:
             with st.spinner(f"Loading recommendations for {project_config['name']}..."):
                 # Get project info and specs
+                import asyncio
                 project_info, project_specs, _ = asyncio.run(get_project_info_async(project_id))
                 
                 # Get recommendations from state if available
@@ -2394,6 +2396,35 @@ def configure_batch_analysis():
         
         if st.button("📊 Export Solution Data to CSV", key="export_solution_csv", type="secondary"):
             try:
+                # Ensure recommendations cache is populated for LLM type extraction
+                if "cached_project_recommendations" not in st.session_state:
+                    st.session_state.cached_project_recommendations = {}
+                
+                # Populate cache for any missing projects
+                for project_id in selected_projects:
+                    if project_id not in st.session_state.cached_project_recommendations:
+                        with st.spinner(f"Loading recommendations for LLM type extraction..."):
+                            try:
+                                from meta_artemis_modules.project_manager import get_project_info_async
+                                from meta_artemis_modules.recommendations import get_top_construct_recommendations
+                                
+                                project_info, project_specs, _ = asyncio.run(get_project_info_async(project_id))
+                                
+                                # Get recommendations for LLM type extraction
+                                recommendations = get_top_construct_recommendations(
+                                    project_id=project_id,
+                                    project_specs=project_specs,
+                                    generated_recommendations=None,
+                                    top_n=10
+                                )
+                                
+                                st.session_state.cached_project_recommendations[project_id] = recommendations
+                                logger.info(f"✅ CSV Export: Populated {len(recommendations)} recommendations for project {project_id}")
+                                
+                            except Exception as e:
+                                logger.warning(f"⚠️ CSV Export: Could not populate recommendations for project {project_id}: {str(e)}")
+                                st.session_state.cached_project_recommendations[project_id] = []
+                
                 # Collect all solution evaluation data
                 csv_data = []
                 
@@ -2428,6 +2459,7 @@ def configure_batch_analysis():
                                 "construct_id": "Original",
                                 "spec_id": "Original",
                                 "prompt_version": "original",
+                                "code_optimization_llm": "original",  # Original code, no LLM used
                                 "num_specs_in_solution": 0,
                                 "num_runtime_measurements": 0  # Will be updated after extracting measurements
                             }
@@ -2500,6 +2532,42 @@ def configure_batch_analysis():
                             first_construct_id = specs[0].get("construct_id", "")
                             all_runtime_measurements = extract_runtime_from_solution_results(results_summary, first_construct_id)
                             
+                            # Extract LLM type from the first spec (assume all specs use the same LLM)
+                            first_spec = specs[0]
+                            first_spec_id = first_spec.get("spec_id", "")
+                            
+                            # Try to extract LLM information from cached recommendations or spec ID pattern
+                            code_optimization_llm = "unknown"
+                            
+                            # Debug: Check what's in the cache
+                            if hasattr(st.session_state, 'cached_project_recommendations') and project_id in st.session_state.cached_project_recommendations:
+                                cached_recs = st.session_state.cached_project_recommendations[project_id]
+
+                                # First, try to find the spec in cached recommendations by construct_id
+                                for rec in cached_recs:
+                                    # Try to match by construct_id since spec_id might not match
+                                    if rec.get("construct_id") == first_construct_id:
+                                        spec_name = rec.get("spec_name", "")
+                                        if spec_name:
+                                            code_optimization_llm = extract_llm_type_from_spec_name(spec_name)
+                                            logger.info(f"✅ CSV Export: Found LLM type {code_optimization_llm} for construct {first_construct_id} from spec_name: {spec_name}")
+                                            break
+                                
+                                # If still not found, try to match by spec_id (exact match)
+                                if code_optimization_llm == "unknown":
+                                    for rec in cached_recs:
+                                        if rec.get("new_spec_id") == first_spec_id or rec.get("spec_id") == first_spec_id:
+                                            spec_name = rec.get("spec_name", "")
+                                            if spec_name:
+                                                code_optimization_llm = extract_llm_type_from_spec_name(spec_name)
+                                                logger.info(f"✅ CSV Export: Found LLM type {code_optimization_llm} for spec {first_spec_id} from spec_name: {spec_name}")
+                                                break
+                                
+                                if code_optimization_llm == "unknown":
+                                    logger.warning(f"⚠️ CSV Export: Could not find LLM type for construct {first_construct_id} or spec {first_spec_id}")
+                            else:
+                                logger.warning(f"⚠️ CSV Export: No cached recommendations found for project {project_id}")
+                            
                             # Create base row data for version-level solution
                             base_row = {
                                 "project_id": project_id,
@@ -2512,6 +2580,7 @@ def configure_batch_analysis():
                                 "construct_id": "All",  # Use "All" for version-level solutions
                                 "spec_id": "All",      # Use "All" for version-level solutions
                                 "prompt_version": prompt_version or "unknown",
+                                "code_optimization_llm": code_optimization_llm,
                                 "num_specs_in_solution": len(specs),
                                 "num_runtime_measurements": len(all_runtime_measurements)
                             }
@@ -2532,6 +2601,40 @@ def configure_batch_analysis():
                             # Extract runtime measurements for this construct
                             runtime_measurements = extract_runtime_from_solution_results(results_summary, construct_id)
                             
+                            # Try to extract LLM information from cached recommendations or spec ID pattern
+                            code_optimization_llm = "unknown"
+                            
+                            # Debug: Check what's in the cache
+                            if hasattr(st.session_state, 'cached_project_recommendations') and project_id in st.session_state.cached_project_recommendations:
+                                cached_recs = st.session_state.cached_project_recommendations[project_id]
+                                logger.info(f"🔍 CSV Export: Found {len(cached_recs)} cached recommendations for project {project_id}")
+                                logger.info(f"🔍 CSV Export: Looking for construct_id {construct_id} or spec_id {spec_id}")
+                                
+                                # First, try to find the spec in cached recommendations by construct_id
+                                for rec in cached_recs:
+                                    # Try to match by construct_id since spec_id might not match
+                                    if rec.get("construct_id") == construct_id:
+                                        spec_name = rec.get("spec_name", "")
+                                        if spec_name:
+                                            code_optimization_llm = extract_llm_type_from_spec_name(spec_name)
+                                            logger.info(f"✅ CSV Export: Found LLM type {code_optimization_llm} for construct {construct_id} from spec_name: {spec_name}")
+                                            break
+                                
+                                # If still not found, try to match by spec_id (exact match)
+                                if code_optimization_llm == "unknown":
+                                    for rec in cached_recs:
+                                        if rec.get("new_spec_id") == spec_id or rec.get("spec_id") == spec_id:
+                                            spec_name = rec.get("spec_name", "")
+                                            if spec_name:
+                                                code_optimization_llm = extract_llm_type_from_spec_name(spec_name)
+                                                logger.info(f"✅ CSV Export: Found LLM type {code_optimization_llm} for spec {spec_id} from spec_name: {spec_name}")
+                                                break
+                                
+                                if code_optimization_llm == "unknown":
+                                    logger.warning(f"⚠️ CSV Export: Could not find LLM type for construct {construct_id} or spec {spec_id}")
+                            else:
+                                logger.warning(f"⚠️ CSV Export: No cached recommendations found for project {project_id}")
+                            
                             # Create base row data
                             base_row = {
                                 "project_id": project_id,
@@ -2544,6 +2647,7 @@ def configure_batch_analysis():
                                 "construct_id": construct_id,
                                 "spec_id": spec_id,
                                 "prompt_version": prompt_version or "unknown",
+                                "code_optimization_llm": code_optimization_llm,
                                 "num_specs_in_solution": len(specs),
                                 "num_runtime_measurements": len(runtime_measurements)
                             }
@@ -3269,6 +3373,43 @@ def process_version_level_solutions(version_level_solutions: List[dict], top_ran
             logger.warning(f"⚠️ Statistical analysis failed for version-level data: {str(e)}")
     
     return version_level_data
+
+def extract_llm_type_from_spec_name(spec_name: str) -> str:
+    """Extract LLM type from spec name using the same logic as recommendations filtering"""
+    if not spec_name:
+        return "unknown"
+    
+    spec_name_lower = spec_name.lower()
+    
+    # Common LLM patterns
+    if "claude" in spec_name_lower:
+        if "claude-v37-sonnet" in spec_name_lower:
+            return "claude-v37-sonnet"
+        elif "claude" in spec_name_lower:
+            return "claude"
+    elif "gpt-4" in spec_name_lower:
+        if "gpt-4-o" in spec_name_lower:
+            return "gpt-4-o"
+        else:
+            return "gpt-4"
+    elif "gpt" in spec_name_lower:
+        return "gpt"
+    elif "gemini" in spec_name_lower:
+        return "gemini"
+    else:
+        # Extract first part before hyphen or underscore as potential LLM type
+        parts = spec_name.split("-")
+        if len(parts) >= 2:
+            potential_llm = "-".join(parts[:2])
+            return potential_llm
+        
+        # If no hyphen, try underscore
+        parts = spec_name.split("_")
+        if len(parts) >= 2:
+            potential_llm = "_".join(parts[:2])
+            return potential_llm
+    
+    return "unknown"
 
 def extract_runtime_from_solution_results(results_summary: dict, construct_id: str) -> List[float]:
     """Extract runtime measurements from solution results_summary for a specific construct"""
