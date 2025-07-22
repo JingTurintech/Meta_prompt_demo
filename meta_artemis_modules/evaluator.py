@@ -213,84 +213,82 @@ class MetaArtemisEvaluator:
         """Generate optimized prompts using meta-prompting and ASE25 techniques for each selected template"""
         prompts = {}
         
-                
-        
         for template_id in self.selected_templates:
             # Handle Meta-Prompt Templates
             if template_id in META_PROMPT_TEMPLATES:
-            template = META_PROMPT_TEMPLATES[template_id]
+                template = META_PROMPT_TEMPLATES[template_id]
             
-            if self.progress_callback:
-                self.progress_callback({
-                    "status": "generating_meta_prompt", 
-                    "message": f"Generating meta-prompt for {template['name']}..."
-                })
-            
-            # Use custom template content if available, otherwise use default
-            template_content = self.custom_templates.get(template_id, template["template"])
-            
-            # Prepare template parameters
-            template_params = {
-                "objective": self.task["objective"],
-                "task_description": self.custom_task_description or self.task["description"],
-                "target_llm": self.code_optimization_llm_type,  # Use code optimization LLM as target
-                "project_name": project_info.get("name", "Unknown"),
-                "project_description": project_info.get("description", "No description available"),
-                "project_languages": project_info.get("language", "unknown")
-            }
-            
-            # Add current_prompt for templates that need it (like simplified)
-            if "{current_prompt}" in template_content:
-                template_params["current_prompt"] = self.current_prompt
-            
-            # Add task_considerations for enhanced template
-            if "{task_considerations}" in template_content:
-                template_params["task_considerations"] = self.task.get("considerations", "General optimization considerations")
-            
-            # Fill the meta-prompt template
-            meta_prompt = template_content.format(**template_params)
-            
-            # Store meta-prompt
-            self.meta_prompts[template_id] = {
-                "name": template["name"],
-                "filled_template": meta_prompt
-            }
-            
-            if self.progress_callback:
-                self.progress_callback({
-                    "status": "meta_prompt_ready",
-                    "template_id": template_id,
-                    "filled_meta_prompt": meta_prompt
-                })
-            
-            if self.progress_callback:
-                self.progress_callback({
-                    "status": "generating_prompt", 
-                    "message": f"Generating optimization prompt using {template['name']}..."
-                })
-            
-            # Generate the optimization prompt using meta-prompt LLM
-            request = LLMInferenceRequest(
-                model_type=self.meta_prompt_llm_type,
-                messages=[LLMConversationMessage(role=LLMRole.USER, content=meta_prompt)]
-            )
-            
-            try:
-                response = await self.vision_async_client.ask(request)
-                generated_prompt = response.messages[1].content.strip()
-                prompts[template_id] = generated_prompt
+                if self.progress_callback:
+                    self.progress_callback({
+                        "status": "generating_meta_prompt", 
+                        "message": f"Generating meta-prompt for {template['name']}..."
+                    })
+                
+                # Use custom template content if available, otherwise use default
+                template_content = self.custom_templates.get(template_id, template["template"])
+                
+                # Prepare template parameters
+                template_params = {
+                    "objective": self.task["objective"],
+                    "task_description": self.custom_task_description or self.task["description"],
+                    "target_llm": self.code_optimization_llm_type,  # Use code optimization LLM as target
+                    "project_name": project_info.get("name", "Unknown"),
+                    "project_description": project_info.get("description", "No description available"),
+                    "project_languages": project_info.get("language", "unknown")
+                }
+                
+                # Add current_prompt for templates that need it (like simplified)
+                if "{current_prompt}" in template_content:
+                    template_params["current_prompt"] = self.current_prompt
+                
+                # Add task_considerations for enhanced template
+                if "{task_considerations}" in template_content:
+                    template_params["task_considerations"] = self.task.get("considerations", "General optimization considerations")
+                
+                # Fill the meta-prompt template
+                meta_prompt = template_content.format(**template_params)
+                
+                # Store meta-prompt
+                self.meta_prompts[template_id] = {
+                    "name": template["name"],
+                    "filled_template": meta_prompt
+                }
                 
                 if self.progress_callback:
                     self.progress_callback({
-                        "status": "prompt_ready",
+                        "status": "meta_prompt_ready",
                         "template_id": template_id,
-                        "generated_prompt": generated_prompt
+                        "filled_meta_prompt": meta_prompt
                     })
+                
+                if self.progress_callback:
+                    self.progress_callback({
+                        "status": "generating_prompt", 
+                        "message": f"Generating optimization prompt using {template['name']}..."
+                    })
+                
+                # Generate the optimization prompt using meta-prompt LLM
+                request = LLMInferenceRequest(
+                    model_type=self.meta_prompt_llm_type,
+                    messages=[LLMConversationMessage(role=LLMRole.USER, content=meta_prompt)]
+                )
+                
+                try:
+                    response = await self.vision_async_client.ask(request)
+                    generated_prompt = response.messages[1].content.strip()
+                    prompts[template_id] = generated_prompt
                     
-            except Exception as e:
-                logger.error(f"Error generating prompt for {template_id}: {str(e)}")
-                prompts[template_id] = self.current_prompt
-            
+                    if self.progress_callback:
+                        self.progress_callback({
+                            "status": "prompt_ready",
+                            "template_id": template_id,
+                            "generated_prompt": generated_prompt
+                        })
+                        
+                except Exception as e:
+                    logger.error(f"Error generating prompt for {template_id}: {str(e)}")
+                    prompts[template_id] = self.current_prompt
+                
             # Handle baseline prompting techniques (direct templates)
             elif template_id in BASELINE_PROMPTING_TEMPLATES:
                 # Get template from custom templates (which now includes baseline techniques)
@@ -420,8 +418,8 @@ class MetaArtemisEvaluator:
             
             # Execute recommendation task
             try:
-            response = self.falcon_client.execute_recommendation_task(request=recommendation_request, create_process=True)
-            logger.info(f"Successfully created baseline recommendation task for spec {spec_info['spec_id']}")
+                response = self.falcon_client.execute_recommendation_task(request=recommendation_request, create_process=True)
+                logger.info(f"Successfully created baseline recommendation task for spec {spec_info['spec_id']}")
             except Exception as api_error:
                 # Handle Pydantic validation errors gracefully
                 if "validation errors" in str(api_error) and "status_code': 201" in str(api_error):
@@ -600,8 +598,8 @@ class MetaArtemisEvaluator:
             
             # Execute recommendation task
             try:
-            response = self.falcon_client.execute_recommendation_task(request=recommendation_request, create_process=True)
-            logger.info(f"Successfully created recommendation task for spec {spec_info['spec_id']}")
+                response = self.falcon_client.execute_recommendation_task(request=recommendation_request, create_process=True)
+                logger.info(f"Successfully created recommendation task for spec {spec_info['spec_id']}")
             except Exception as api_error:
                 # Handle Pydantic validation errors gracefully
                 if "validation errors" in str(api_error) and "status_code': 201" in str(api_error):
