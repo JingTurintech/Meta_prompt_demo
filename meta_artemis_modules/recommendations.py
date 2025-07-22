@@ -1128,7 +1128,7 @@ def display_recommendations_table(project_id: str, project_name: str, recommenda
                         llm_types.add(potential_llm)
         
         # Filter section
-            st.markdown("#### 🔍 Filter Options")
+        st.markdown("#### 🔍 Filter Options")
         
         # Template filter
         if template_types:
