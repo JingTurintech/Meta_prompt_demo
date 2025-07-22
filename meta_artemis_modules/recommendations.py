@@ -869,21 +869,69 @@ def get_top_construct_recommendations(
                 template_name = "Existing Recommendation"
                 template_id = "existing"
                 
-                # Try to determine template type from prompt info
-                if rec_info.get("prompt_info") and rec_info["prompt_info"].get("name"):
+                # Try to determine template type from template_id first, then prompt info
+                if rec_info.get("template_id"):
+                    # Use the stored template_id directly
+                    stored_template_id = rec_info["template_id"]
+                    from meta_artemis_modules.shared_templates import ALL_PROMPTING_TEMPLATES
+                    if stored_template_id in ALL_PROMPTING_TEMPLATES:
+                        template_name = ALL_PROMPTING_TEMPLATES[stored_template_id]["name"]
+                        template_id = stored_template_id
+                    else:
+                        # Handle legacy template IDs
+                        if stored_template_id == "enhanced":
+                            template_name = "MPCO (Full Context)"
+                            template_id = "mpco"
+                        elif stored_template_id in ["simplified", "standard"]:
+                            template_name = ALL_PROMPTING_TEMPLATES.get(stored_template_id, {}).get("name", stored_template_id)
+                            template_id = stored_template_id
+                        else:
+                            template_name = stored_template_id.replace("_", " ").title()
+                            template_id = stored_template_id
+                elif rec_info.get("prompt_info") and rec_info["prompt_info"].get("name"):
                     prompt_name = rec_info["prompt_info"]["name"]
+                    # Check for MPCO templates
                     if "simplified" in prompt_name.lower():
                         template_name = "Simplified Template"
                         template_id = "simplified"
                     elif "standard" in prompt_name.lower():
                         template_name = "Standard Template"
                         template_id = "standard"
-                    elif "enhanced" in prompt_name.lower():
-                        template_name = "Enhanced Template"
-                        template_id = "enhanced"
+                    elif "enhanced" in prompt_name.lower() or "mpco" in prompt_name.lower():
+                        template_name = "MPCO (Full Context)"
+                        template_id = "mpco"
                     elif "baseline" in prompt_name.lower():
                         template_name = "Baseline"
                         template_id = "baseline"
+                    # Check for new baseline prompting templates
+                    elif "direct" in prompt_name.lower():
+                        template_name = "Direct Prompt"
+                        template_id = "direct_prompt"
+                    elif "chain" in prompt_name.lower() or "cot" in prompt_name.lower():
+                        template_name = "Chain-of-Thought Prompting"
+                        template_id = "chain_of_thought"
+                    elif "few" in prompt_name.lower() and "shot" in prompt_name.lower():
+                        template_name = "Few-Shot Prompting"
+                        template_id = "few_shot"
+                    elif "metacognitive" in prompt_name.lower():
+                        template_name = "Metacognitive Prompting"
+                        template_id = "metacognitive"
+                    elif "contextual" in prompt_name.lower():
+                        template_name = "Contextual Prompting"
+                        template_id = "contextual_prompting"
+                    # Check for ablation study templates
+                    elif "no_project_context" in prompt_name.lower():
+                        template_name = "No Project Context"
+                        template_id = "no_project_context"
+                    elif "no_task_context" in prompt_name.lower():
+                        template_name = "No Task Context"
+                        template_id = "no_task_context"
+                    elif "no_llm_context" in prompt_name.lower():
+                        template_name = "No LLM Context"
+                        template_id = "no_llm_context"
+                    elif "minimal_context" in prompt_name.lower():
+                        template_name = "Minimal Context"
+                        template_id = "minimal_context"
                 
                 recommendation_obj = {
                     "spec_id": rec_info["spec_id"],
@@ -970,6 +1018,7 @@ def get_top_construct_recommendations_fallback(project_id: str, project_specs: L
             # Try to determine template type from prompt info
             if rec_info.get("prompt_info") and rec_info["prompt_info"].get("name"):
                 prompt_name = rec_info["prompt_info"]["name"]
+                # Check for MPCO templates
                 if "simplified" in prompt_name.lower():
                     template_name = "Simplified Template"
                     template_id = "simplified"
@@ -1046,8 +1095,14 @@ def display_recommendations_table(project_id: str, project_name: str, recommenda
         
         # Extract unique LLM types from spec names
         llm_types = set()
+        template_types = set()
         for rec in recommendations:
             spec_name = rec.get("spec_name", "")
+            # Extract template types
+            template_name = rec.get("template_name", "")
+            if template_name and template_name != "Existing Recommendation":
+                template_types.add(template_name)
+            
             # Extract LLM type from spec name (e.g., "claude-v37-sonnet-cb69e" -> "claude-v37-sonnet")
             if spec_name:
                 # Common LLM patterns
@@ -1073,8 +1128,53 @@ def display_recommendations_table(project_id: str, project_name: str, recommenda
                         llm_types.add(potential_llm)
         
         # Filter section
-        if llm_types:
             st.markdown("#### 🔍 Filter Options")
+        
+        # Template filter
+        if template_types:
+            st.markdown("##### 📝 Filter by Template:")
+            template_filter_options = sorted(list(template_types))
+            
+            # Create columns for template checkboxes
+            num_templates = len(template_filter_options)
+            cols_per_row = 3
+            num_rows = (num_templates + cols_per_row - 1) // cols_per_row
+            
+            selected_templates = []
+            for row in range(num_rows):
+                cols = st.columns(cols_per_row)
+                for col_idx in range(cols_per_row):
+                    template_idx = row * cols_per_row + col_idx
+                    if template_idx < num_templates:
+                        template_name = template_filter_options[template_idx]
+                        with cols[col_idx]:
+                            if st.checkbox(
+                                template_name,
+                                key=f"template_filter_{project_id}_{template_name.replace(' ', '_')}",
+                                help=f"Include recommendations from {template_name}"
+                            ):
+                                selected_templates.append(template_name)
+            
+            # Add select all/none buttons for templates
+            col1, col2, col3 = st.columns([1, 1, 8])
+            with col1:
+                if st.button("Select All Templates", key=f"select_all_templates_{project_id}"):
+                    for template_name in template_filter_options:
+                        st.session_state[f"template_filter_{project_id}_{template_name.replace(' ', '_')}"] = True
+                    st.rerun()
+            with col2:
+                if st.button("Clear All Templates", key=f"clear_all_templates_{project_id}"):
+                    for template_name in template_filter_options:
+                        st.session_state[f"template_filter_{project_id}_{template_name.replace(' ', '_')}"] = False
+                    st.rerun()
+            
+            st.markdown(f"**Selected Templates:** {', '.join(selected_templates) if selected_templates else 'None'}")
+        else:
+            selected_templates = []
+        
+        # LLM filter
+        if llm_types:
+            st.markdown("##### 🤖 Filter by LLM Type:")
             col1, col2 = st.columns(2)
             with col1:
                 llm_filter_options = ["All LLM Types"] + sorted(list(llm_types))
@@ -1090,6 +1190,16 @@ def display_recommendations_table(project_id: str, project_name: str, recommenda
                 st.markdown(f"Found: {', '.join(sorted(llm_types))}")
         else:
             selected_llm_filter = "All LLM Types"
+        
+        # Apply template filter
+        if selected_templates:
+            filtered_recommendations = []
+            for rec in recommendations:
+                template_name = rec.get("template_name", "")
+                if template_name in selected_templates:
+                    filtered_recommendations.append(rec)
+            recommendations = filtered_recommendations
+            logger.info(f"🔍 Filtered to {len(recommendations)} recommendations for templates: {', '.join(selected_templates)}")
         
         # Apply LLM filter
         if selected_llm_filter != "All LLM Types":

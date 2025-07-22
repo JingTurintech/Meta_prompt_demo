@@ -54,6 +54,21 @@ from .visualization import (
     _display_execution_results
 )
 
+from .performance_improvement_analysis import (
+    compute_performance_improvements,
+    create_overall_improvement_box_plot,
+    create_project_improvement_box_plots,
+    create_version_level_improvement_box_plots,
+    create_construct_improvement_box_plots,
+    create_improvement_summary_table,
+    perform_improvement_statistical_analysis,
+    create_overall_improvement_summary_table,
+    create_project_improvement_summary_table,
+    create_construct_improvement_summary_table,
+    create_version_level_improvement_summary_table,
+    display_performance_improvement_analysis
+)
+
 # Define what gets exported when using "from meta_artemis_modules import *"
 __all__ = [
     # Utils
@@ -97,5 +112,19 @@ __all__ = [
     'create_performance_comparison_chart',
     'display_execution_results',
     'create_summary_dashboard',
-    '_display_execution_results'
+    '_display_execution_results',
+    
+    # Performance Improvement Analysis
+    'compute_performance_improvements',
+    'create_overall_improvement_box_plot',
+    'create_project_improvement_box_plots',
+    'create_version_level_improvement_box_plots',
+    'create_construct_improvement_box_plots',
+    'create_improvement_summary_table',
+    'perform_improvement_statistical_analysis',
+    'create_overall_improvement_summary_table',
+    'create_project_improvement_summary_table',
+    'create_construct_improvement_summary_table',
+    'create_version_level_improvement_summary_table',
+    'display_performance_improvement_analysis'
 ] 

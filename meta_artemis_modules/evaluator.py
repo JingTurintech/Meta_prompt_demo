@@ -22,7 +22,8 @@ import httpx
 import urllib3
 import warnings
 import requests
-from meta_artemis_modules.shared_templates import OPTIMIZATION_TASKS, META_PROMPT_TEMPLATES, AVAILABLE_LLMS, JUDGE_PROMPT_TEMPLATE, DEFAULT_PROJECT_OPTIMISATION_IDS
+from meta_artemis_modules.shared_templates import OPTIMIZATION_TASKS, META_PROMPT_TEMPLATES, AVAILABLE_LLMS, JUDGE_PROMPT_TEMPLATE, DEFAULT_PROJECT_OPTIMISATION_IDS, ALL_PROMPTING_TEMPLATES, BASELINE_PROMPTING_TEMPLATES
+
 
 # Suppress SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -107,6 +108,8 @@ class MetaArtemisEvaluator:
         
         # Existing recommendations storage
         self.existing_recommendations = {}
+        
+
 
     async def setup_clients(self):
         """Setup API clients with proper configuration"""
@@ -207,14 +210,14 @@ class MetaArtemisEvaluator:
             }
 
     async def generate_optimization_prompts(self, project_info: Dict[str, Any]) -> Dict[str, str]:
-        """Generate optimized prompts using meta-prompting for each selected template"""
+        """Generate optimized prompts using meta-prompting and ASE25 techniques for each selected template"""
         prompts = {}
         
-        for template_id in self.selected_templates:
-            if template_id not in META_PROMPT_TEMPLATES:
-                logger.warning(f"Template {template_id} not found, skipping")
-                continue
                 
+        
+        for template_id in self.selected_templates:
+            # Handle Meta-Prompt Templates
+            if template_id in META_PROMPT_TEMPLATES:
             template = META_PROMPT_TEMPLATES[template_id]
             
             if self.progress_callback:
@@ -287,6 +290,47 @@ class MetaArtemisEvaluator:
             except Exception as e:
                 logger.error(f"Error generating prompt for {template_id}: {str(e)}")
                 prompts[template_id] = self.current_prompt
+            
+            # Handle baseline prompting techniques (direct templates)
+            elif template_id in BASELINE_PROMPTING_TEMPLATES:
+                # Get template from custom templates (which now includes baseline techniques)
+                if template_id in self.custom_templates:
+                    template_content = self.custom_templates[template_id]
+                    
+                    if self.progress_callback:
+                        self.progress_callback({
+                            "status": "generating_prompt",
+                            "message": f"Using {template_id.replace('_', ' ').title()} prompting..."
+                        })
+                    
+                    # For baseline techniques, use the template directly (no meta-prompting)
+                    prompts[template_id] = template_content
+                    
+                    # Store simple meta-prompt info for baseline techniques
+                    baseline_info = BASELINE_PROMPTING_TEMPLATES[template_id]
+                    self.meta_prompts[template_id] = {
+                        "name": baseline_info["name"],
+                        "filled_template": f"Direct template: {baseline_info['name']}"
+                    }
+                    
+                    if self.progress_callback:
+                        self.progress_callback({
+                            "status": "prompt_ready",
+                            "template_id": template_id,
+                            "generated_prompt": template_content
+                        })
+                else:
+                    logger.warning(f"Template {template_id} not found in custom templates")
+                    prompts[template_id] = self.current_prompt
+                    # Fallback meta-prompt info
+                    self.meta_prompts[template_id] = {
+                        "name": "Unknown Strategy",
+                        "filled_template": f"Template {template_id} not found"
+                    }
+            
+            else:
+                logger.warning(f"Template {template_id} not found, skipping")
+                continue
         
         self.generated_prompts = prompts
         return prompts
@@ -375,8 +419,35 @@ class MetaArtemisEvaluator:
             )
             
             # Execute recommendation task
+            try:
             response = self.falcon_client.execute_recommendation_task(request=recommendation_request, create_process=True)
             logger.info(f"Successfully created baseline recommendation task for spec {spec_info['spec_id']}")
+            except Exception as api_error:
+                # Handle Pydantic validation errors gracefully
+                if "validation errors" in str(api_error) and "status_code': 201" in str(api_error):
+                    logger.warning(f"API response validation error for baseline spec {spec_info['spec_id']}, but API call succeeded (status 201). Attempting to extract response data...")
+                    
+                    # Try to extract the raw response from the error
+                    error_str = str(api_error)
+                    try:
+                        # Look for the response data in the error message
+                        import re
+                        
+                        # Extract the JSON-like content from the error message
+                        match = re.search(r"input_value=({.*?})", error_str)
+                        if match:
+                            response_data = match.group(1)
+                            # Parse the extracted JSON
+                            response = eval(response_data)  # Note: eval is used here as a quick fix
+                            logger.info(f"Successfully extracted response data from validation error for baseline spec {spec_info['spec_id']}")
+                        else:
+                            logger.error(f"Could not extract response data from validation error for baseline spec {spec_info['spec_id']}")
+                            raise api_error
+                    except Exception as parse_error:
+                        logger.error(f"Failed to parse response from validation error for baseline spec {spec_info['spec_id']}: {str(parse_error)}")
+                        raise api_error
+                else:
+                    raise api_error
             
             # Extract the process ID from the response
             if not isinstance(response, dict) or 'content' not in response or 'item' not in response['content']:
@@ -528,8 +599,36 @@ class MetaArtemisEvaluator:
             )
             
             # Execute recommendation task
+            try:
             response = self.falcon_client.execute_recommendation_task(request=recommendation_request, create_process=True)
             logger.info(f"Successfully created recommendation task for spec {spec_info['spec_id']}")
+            except Exception as api_error:
+                # Handle Pydantic validation errors gracefully
+                if "validation errors" in str(api_error) and "status_code': 201" in str(api_error):
+                    logger.warning(f"API response validation error for spec {spec_info['spec_id']}, but API call succeeded (status 201). Attempting to extract response data...")
+                    
+                    # Try to extract the raw response from the error
+                    error_str = str(api_error)
+                    try:
+                        # Look for the response data in the error message
+                        import re
+                        import json
+                        
+                        # Extract the JSON-like content from the error message
+                        match = re.search(r"input_value=({.*?})", error_str)
+                        if match:
+                            response_data = match.group(1)
+                            # Parse the extracted JSON
+                            response = eval(response_data)  # Note: eval is used here as a quick fix
+                            logger.info(f"Successfully extracted response data from validation error for spec {spec_info['spec_id']}")
+                        else:
+                            logger.error(f"Could not extract response data from validation error for spec {spec_info['spec_id']}")
+                            raise api_error
+                    except Exception as parse_error:
+                        logger.error(f"Failed to parse response from validation error for spec {spec_info['spec_id']}: {str(parse_error)}")
+                        raise api_error
+                else:
+                    raise api_error
             
             # Extract the process ID from the response
             if not isinstance(response, dict) or 'content' not in response or 'item' not in response['content']:
@@ -1499,12 +1598,76 @@ class MetaArtemisEvaluator:
                 construct=False
             )
             
-            # Determine which template was used based on prompt info
-            template_id = "standard"  # default
-            if recommendation_info.get("prompt_info"):
+            # Determine which template was used based on template_id or prompt info
+            template_id = "existing"  # default for existing recommendations
+            template_name = "Unknown Template"
+            
+            # Try to determine template type from template_id first, then prompt info
+            if recommendation_info.get("template_id"):
+                # Use the stored template_id directly
+                stored_template_id = recommendation_info["template_id"]
+                from meta_artemis_modules.shared_templates import ALL_PROMPTING_TEMPLATES
+                if stored_template_id in ALL_PROMPTING_TEMPLATES:
+                    template_name = ALL_PROMPTING_TEMPLATES[stored_template_id]["name"]
+                    template_id = stored_template_id
+                else:
+                    # Handle legacy template IDs
+                    if stored_template_id == "enhanced":
+                        template_name = "MPCO (Full Context)"
+                        template_id = "mpco"
+                    elif stored_template_id in ["simplified", "standard"]:
+                        template_name = ALL_PROMPTING_TEMPLATES.get(stored_template_id, {}).get("name", stored_template_id)
+                        template_id = stored_template_id
+                    else:
+                        template_name = stored_template_id.replace("_", " ").title()
+                        template_id = stored_template_id
+            elif recommendation_info.get("prompt_info") and recommendation_info["prompt_info"].get("name"):
                 prompt_name = recommendation_info["prompt_info"]["name"]
-                if "simplified" in prompt_name:
+                # Check for MPCO templates
+                if "simplified" in prompt_name.lower():
+                    template_name = "Simplified Template"
                     template_id = "simplified"
+                elif "standard" in prompt_name.lower():
+                    template_name = "Standard Template"
+                    template_id = "standard"
+                elif "enhanced" in prompt_name.lower() or "mpco" in prompt_name.lower():
+                    template_name = "MPCO (Full Context)"
+                    template_id = "mpco"
+                elif "baseline" in prompt_name.lower():
+                    template_name = "Baseline"
+                    template_id = "baseline"
+                # Check for new baseline prompting templates
+                elif "direct" in prompt_name.lower():
+                    template_name = "Direct Prompt"
+                    template_id = "direct_prompt"
+                elif "chain" in prompt_name.lower() or "cot" in prompt_name.lower():
+                    template_name = "Chain-of-Thought Prompting"
+                    template_id = "chain_of_thought"
+                elif "few" in prompt_name.lower() and "shot" in prompt_name.lower():
+                    template_name = "Few-Shot Prompting"
+                    template_id = "few_shot"
+                elif "metacognitive" in prompt_name.lower():
+                    template_name = "Metacognitive Prompting"
+                    template_id = "metacognitive"
+                elif "contextual" in prompt_name.lower():
+                    template_name = "Contextual Prompting"
+                    template_id = "contextual_prompting"
+                # Check for ablation study templates
+                elif "no_project_context" in prompt_name.lower():
+                    template_name = "No Project Context"
+                    template_id = "no_project_context"
+                elif "no_task_context" in prompt_name.lower():
+                    template_name = "No Task Context"
+                    template_id = "no_task_context"
+                elif "no_llm_context" in prompt_name.lower():
+                    template_name = "No LLM Context"
+                    template_id = "no_llm_context"
+                elif "minimal_context" in prompt_name.lower():
+                    template_name = "Minimal Context"
+                    template_id = "minimal_context"
+                else:
+                    template_name = "Standard Template"
+                    template_id = "standard"
             
             return RecommendationResult(
                 spec_id=spec_id,

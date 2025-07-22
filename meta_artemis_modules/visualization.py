@@ -18,6 +18,35 @@ from scipy import stats
 
 # Add statistical analysis imports
 import warnings
+
+def get_template_display_name(template_id: str) -> str:
+    """Convert template ID to proper display name"""
+    try:
+        from meta_artemis_modules.shared_templates import ALL_PROMPTING_TEMPLATES
+        
+        # First try to get the proper name from ALL_PROMPTING_TEMPLATES
+        if template_id in ALL_PROMPTING_TEMPLATES:
+            return ALL_PROMPTING_TEMPLATES[template_id]["name"]
+        
+        # Handle legacy template IDs
+        legacy_mappings = {
+            "enhanced": "MPCO (Full Context)",
+            "mpco": "MPCO (Full Context)",
+            "standard": "Standard Template", 
+            "simplified": "Simplified Template",
+            "baseline": "Baseline",
+            "original": "Original"
+        }
+        
+        if template_id in legacy_mappings:
+            return legacy_mappings[template_id]
+        
+        # For unknown templates, format the ID nicely
+        return template_id.replace("_", " ").title()
+        
+    except ImportError:
+        # Fallback if import fails
+        return template_id.replace("_", " ").title()
 warnings.filterwarnings('ignore')
 
 # scipy is needed for effect size calculations
@@ -827,16 +856,17 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
             horizontal_spacing=0.08
         )
         
-        # Version colors for consistency
-        version_colors = {
-            "original": "#ff7f7f",     # Light red
-            "baseline": "#ffb347",     # Light orange  
-            "simplified": "#87ceeb",   # Light blue
-            "standard": "#98fb98",     # Light green
-            "enhanced": "#90ee90"      # Green
-        }
+        # Discover all available versions from the data
+        all_versions = set()
+        for construct_id, details in constructs_with_data.items():
+            construct_versions = details.get("versions", {})
+            all_versions.update(construct_versions.keys())
         
-        versions = ["original", "baseline", "simplified", "standard", "enhanced"]
+        # Generate colors for all versions dynamically
+        from meta_artemis_modules.utils import generate_colors
+        versions = sorted(list(all_versions))  # Sort for consistent order
+        color_list = generate_colors(len(versions))  # Pass count as integer
+        version_colors = dict(zip(versions, color_list))  # Map version names to colors
         
         # Plot each construct
         for idx, (construct_id, details) in enumerate(constructs_with_data.items()):
@@ -863,12 +893,12 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
                 sk_rank = sk_rankings.get(version, None)
                 
                 # Create version label for hover (includes rank info)
-                version_label_with_rank = version.title()
+                version_label_with_rank = get_template_display_name(version)
                 if sk_rank is not None:
                     version_label_with_rank += f" (Rank {sk_rank})"
                 
                 # Create clean version label for legend (no rank info)
-                legend_label = version.title()
+                legend_label = get_template_display_name(version)
                 
                 if version_data:  # Has data
                     fig.add_trace(go.Box(
@@ -958,9 +988,9 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
                             
                             # Create label with rank information
                             if sk_rank is not None:
-                                version_label = f"{version.title()}\n(Rank {sk_rank})"
+                                version_label = f"{get_template_display_name(version)}\n(Rank {sk_rank})"
                             else:
-                                version_label = version.title()
+                                version_label = get_template_display_name(version)
                             
                             # Make the best version bold - use HTML formatting
                             if sk_rank == 1:  # Changed from 'version in best_versions' to directly check rank
@@ -1000,14 +1030,21 @@ def create_individual_construct_box_plots(construct_details: Dict[str, Dict], pr
 def create_version_level_box_plot(version_level_data: Dict[str, Any], project_name: str) -> Optional[go.Figure]:
     """Create box plot for version-level solutions with statistical analysis"""
     try:
-        # Prepare data for box plot - ALWAYS include all 5 versions
-        version_runtime_data = {
-            "original": [],
-            "baseline": [],
-            "simplified": [],
-            "standard": [],
-            "enhanced": []
-        }
+        # Dynamically discover all available versions from the data
+        all_versions = set()
+        if version_level_data and version_level_data.get("solutions"):
+            for solution in version_level_data["solutions"]:
+                all_versions.add(solution["version_type"])
+        
+        # Check if we have any versions at all
+        if not all_versions:
+            logger.warning("No version-level solutions found for box plot creation")
+            return None
+        
+        # Initialize runtime data dictionary with discovered versions
+        version_runtime_data = {version: [] for version in all_versions}
+        
+        logger.info(f"Creating version-level box plot for {project_name} with versions: {sorted(all_versions)}")
         
         # Collect runtime data from each solution
         if version_level_data and version_level_data.get("solutions"):
@@ -1016,6 +1053,17 @@ def create_version_level_box_plot(version_level_data: Dict[str, Any], project_na
                 runtime_data = solution.get("runtime_data", [])
                 if runtime_data and version_type in version_runtime_data:
                     version_runtime_data[version_type].extend(runtime_data)
+                    logger.debug(f"Added {len(runtime_data)} measurements for version '{version_type}'")
+        
+        # Log final data counts
+        data_summary = {v: len(data) for v, data in version_runtime_data.items()}
+        logger.info(f"Version-level runtime data summary: {data_summary}")
+        
+        # Check if we have any data at all
+        total_data_points = sum(len(data) for data in version_runtime_data.values())
+        if total_data_points == 0:
+            logger.warning("No runtime data found in any version-level solutions")
+            return None
         
         # Perform statistical analysis on version-level data
         sk_result = perform_statistical_analysis(version_runtime_data, alpha=0.05)
@@ -1030,29 +1078,27 @@ def create_version_level_box_plot(version_level_data: Dict[str, Any], project_na
         # Create the box plot
         fig = go.Figure()
         
-        # Use SAME colors as construct-level box plots for consistency
-        version_colors = {
-            "original": "#ff7f7f",     # Light red
-            "baseline": "#ffb347",     # Light orange  
-            "simplified": "#87ceeb",   # Light blue
-            "standard": "#98fb98",     # Light green
-            "enhanced": "#90ee90"      # Green
-        }
+        # Use the versions we already discovered from the solutions data
+        # This ensures consistency between version_runtime_data keys and versions list
+        versions = sorted(list(all_versions))  # Sort for consistent order
         
-        versions = ["original", "baseline", "simplified", "standard", "enhanced"]
+        # Generate colors for all versions dynamically  
+        from meta_artemis_modules.utils import generate_colors
+        color_list = generate_colors(len(versions))  # Pass count as integer
+        version_colors = dict(zip(versions, color_list))  # Map version names to colors
         
         # Add box plots for ALL versions (including empty ones)
         for version in versions:
             version_data = version_runtime_data[version]
             
             # Create version label for hover (includes rank info)
-            version_label_with_rank = version.title()
+            version_label_with_rank = get_template_display_name(version)
             if version in sk_rankings:
                 rank = sk_rankings[version]
                 version_label_with_rank += f" (Rank {rank})"
             
             # Create clean version label for legend (no rank info)
-            legend_label = version.title()
+            legend_label = get_template_display_name(version)
             
             if version_data:  # Has data
                 fig.add_trace(go.Box(
@@ -1114,11 +1160,14 @@ def create_version_level_box_plot(version_level_data: Dict[str, Any], project_na
             # Get the statistical analysis rank for this version
             sk_rank = sk_rankings.get(version, None)
             
+            # Use display name instead of title() to get proper formatting
+            display_name = get_template_display_name(version)
+            
             # Create label with rank information
             if sk_rank is not None:
-                version_label = f"{version.title()}\n(Rank {sk_rank})"
+                version_label = f"{display_name}\n(Rank {sk_rank})"
             else:
-                version_label = version.title()
+                version_label = display_name
             
             # Make the best versions bold - use HTML formatting
             if sk_rank == 1:  # Changed from 'version in best_versions' to directly check rank
@@ -1168,23 +1217,33 @@ def create_overall_project_box_plot(valid_projects: Dict[str, Dict[str, Any]]) -
         # Get project name (we know there's only one project)
         project_name = next(iter(valid_projects.values()))["project_name"]
         
-        # Prepare data for box plot - ALWAYS include all 5 versions
-        version_runtime_data = {
-            "original": [],
-            "baseline": [],
-            "simplified": [],
-            "standard": [],
-            "enhanced": []
-        }
+        # Prepare data for box plot - dynamically collect all available versions
+        version_runtime_data = {}
+        
+        # First pass: discover all available versions
+        all_versions = set()
+        for project_id, result in valid_projects.items():
+            construct_details = result.get("construct_details", {})
+            for construct_id, construct_data in construct_details.items():
+                construct_versions = construct_data.get("versions", {})
+                all_versions.update(construct_versions.keys())
+        
+        # Initialize data structure for all discovered versions
+        for version in all_versions:
+            version_runtime_data[version] = []
         
         # Collect ALL runtime data from ALL constructs
         for project_id, result in valid_projects.items():
             # Get construct-level data
             construct_details = result.get("construct_details", {})
+            
             for construct_id, construct_data in construct_details.items():
                 # Get runtime data for each version in this construct
                 construct_versions = construct_data.get("versions", {})  # Changed from versions_data to versions
-                for version in version_runtime_data.keys():
+                
+                for version in construct_versions.keys():
+                    if version not in version_runtime_data:
+                        version_runtime_data[version] = []
                     version_data = construct_versions.get(version, [])  # Access data directly from versions dict
                     if version_data:
                         version_runtime_data[version].extend(version_data)
@@ -1209,29 +1268,24 @@ def create_overall_project_box_plot(valid_projects: Dict[str, Dict[str, Any]]) -
         # Create the box plot
         fig = go.Figure()
         
-        # Use SAME colors as version-level box plots for consistency
-        version_colors = {
-            "original": "#ff7f7f",     # Light red
-            "baseline": "#ffb347",     # Light orange  
-            "simplified": "#87ceeb",   # Light blue
-            "standard": "#98fb98",     # Light green
-            "enhanced": "#90ee90"      # Green
-        }
-        
-        versions = ["original", "baseline", "simplified", "standard", "enhanced"]
+        # Generate colors for all versions dynamically
+        from meta_artemis_modules.utils import generate_colors
+        versions = sorted(list(all_versions))  # Sort for consistent order
+        color_list = generate_colors(len(versions))  # Pass count as integer
+        version_colors = dict(zip(versions, color_list))  # Map version names to colors
         
         # Add box plots for ALL versions (including empty ones)
         for version in versions:
             version_data = version_runtime_data[version]
             
             # Create version label for hover (includes rank info)
-            version_label_with_rank = version.title()
+            version_label_with_rank = get_template_display_name(version)
             if version in sk_rankings:
                 rank = sk_rankings[version]
                 version_label_with_rank += f" (Rank {rank})"
             
             # Create clean version label for legend (no rank info)
-            legend_label = version.title()
+            legend_label = get_template_display_name(version)
             
             if version_data:  # Has data
                 fig.add_trace(go.Box(
@@ -1295,9 +1349,9 @@ def create_overall_project_box_plot(valid_projects: Dict[str, Dict[str, Any]]) -
             
             # Create label with rank information
             if sk_rank is not None:
-                version_label = f"{version.title()}\n(Rank {sk_rank})"
+                version_label = f"{get_template_display_name(version)}\n(Rank {sk_rank})"
             else:
-                version_label = version.title()
+                version_label = get_template_display_name(version)
             
             # Make the best versions bold
             if version in best_versions:
@@ -1395,6 +1449,7 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
             st.warning("⚠️ Unable to create overall project box plot - insufficient data")
     except Exception as e:
         st.error(f"❌ Error creating overall project box plot: {str(e)}")
+        logger.error(f"❌ Error creating overall project box plot: {str(e)}", exc_info=True)
     
 
     for project_id, result in valid_projects.items():
@@ -1500,11 +1555,12 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
                         stats = version_stats.get(version, {})
                         
                         # Add columns for this version
-                        row_data[f"{version.title()} Rank"] = rank_display
-                        row_data[f"{version.title()} Count"] = count
-                        row_data[f"{version.title()} Avg"] = format_perf(stats, "avg")
-                        row_data[f"{version.title()} Min"] = format_perf(stats, "min")
-                        row_data[f"{version.title()} Max"] = format_perf(stats, "max")
+                        version_title = get_template_display_name(version)
+                        row_data[f"{version_title} Rank"] = rank_display
+                        row_data[f"{version_title} Count"] = count
+                        row_data[f"{version_title} Avg"] = format_perf(stats, "avg")
+                        row_data[f"{version_title} Min"] = format_perf(stats, "min")
+                        row_data[f"{version_title} Max"] = format_perf(stats, "max")
                     
                     combined_data.append(row_data)
             
@@ -1520,7 +1576,7 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
                 
                 # Add columns for each version in a logical order
                 for version in sorted(available_versions):
-                    version_title = version.title()
+                    version_title = get_template_display_name(version)
                     version_columns.extend([
                         f"{version_title} Rank",
                         f"{version_title} Count", 
@@ -1586,8 +1642,8 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
                 st.markdown("##### 📊 Version-Level Evaluation Details")
                 st.markdown("*Summary across all version-level solutions (each solution evaluated ~10 times)*")
                 
-                # Ensure all versions are included
-                all_versions = ["original", "baseline", "simplified", "standard", "enhanced"]
+                # Use actual versions from the data
+                all_versions = sorted(list(version_stats.keys())) if version_stats else []
                 stats_data = []
                 
                 for version in all_versions:
@@ -1607,7 +1663,7 @@ def display_box_plot_analysis_results(analysis_results: Dict[str, Any]):
                         rank_display = f"🥇 {sk_rankings[version]}"
                     
                     stats_data.append({
-                        "Version": version.title(),
+                        "Version": get_template_display_name(version),
                         "Rank": rank_display,
                         "Solutions": stats["solution_count"],
                         "Total Measurements": stats["total_measurements"],

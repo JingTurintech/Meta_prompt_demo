@@ -241,10 +241,33 @@ async def get_existing_solutions_async(project_id: str, selected_optimization_id
                     # Get solutions for this optimization
                     try:
                         logger.info(f"🔍 Getting solutions for optimization {opt_id}")
-                        solutions_response = evaluator.falcon_client.get_solutions(opt_id, page=1, per_page=50)
-                        logger.info(f"📊 Found {len(solutions_response.docs)} solutions for optimization {opt_id}")
                         
-                        for solution in solutions_response.docs:
+                        # Implement pagination to get all solutions
+                        all_solutions_for_opt = []
+                        page = 1
+                        per_page = 50
+                        
+                        while True:
+                            solutions_response = evaluator.falcon_client.get_solutions(opt_id, page=page, per_page=per_page)
+                            current_page_solutions = solutions_response.docs
+                            
+                            logger.info(f"📄 Page {page}: Found {len(current_page_solutions)} solutions for optimization {opt_id}")
+                            
+                            if not current_page_solutions:
+                                # No more solutions on this page, break the loop
+                                break
+                            
+                            all_solutions_for_opt.extend(current_page_solutions)
+                            
+                            # Check if we've reached the end (fewer results than per_page means last page)
+                            if len(current_page_solutions) < per_page:
+                                break
+                                
+                            page += 1
+                        
+                        logger.info(f"📊 Total solutions found for optimization {opt_id}: {len(all_solutions_for_opt)}")
+                        
+                        for solution in all_solutions_for_opt:
                             solution_info = {
                                 "solution_id": str(solution.id),
                                 "optimization_id": opt_id,

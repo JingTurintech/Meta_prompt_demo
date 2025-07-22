@@ -48,16 +48,17 @@ This directory contains the modularized components of the Meta Artemis benchmark
 - `display_single_solution_analysis()`: Detailed single solution analysis
 - `create_performance_comparison_chart()`: Performance comparison charts
 - `display_execution_results()`: Display execution results
+
+### 7. `performance_improvement_analysis.py`
+**Purpose**: Performance improvement analysis relative to original version
+- `compute_performance_improvements()`: Calculate percentage improvements vs original
+- `create_overall_improvement_box_plot()`: Overall improvement distribution chart
+- `create_project_improvement_box_plots()`: Project-level improvement charts
+- `create_construct_improvement_box_plots()`: Construct-level improvement charts
+- `create_improvement_summary_table()`: Summary statistics table
+- `display_performance_improvement_analysis()`: Complete improvement analysis display
 - `create_summary_dashboard()`: Comprehensive results dashboard
 
-## Benefits of Modularization
-
-1. **Separation of Concerns**: Each module has a single, well-defined responsibility
-2. **Maintainability**: Easier to locate and modify specific functionality
-3. **Reusability**: Functions can be imported and used independently
-4. **Testing**: Individual modules can be tested in isolation
-5. **Readability**: Smaller, focused files are easier to understand
-6. **Scalability**: New features can be added to appropriate modules
 
 ## Usage
 

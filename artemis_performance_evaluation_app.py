@@ -53,14 +53,17 @@ from meta_artemis_modules.evaluator import (
     MetaArtemisEvaluator, RecommendationResult, SolutionResult
 )
 from meta_artemis_modules.shared_templates import (
-    OPTIMIZATION_TASKS, META_PROMPT_TEMPLATES, AVAILABLE_LLMS, DEFAULT_PROJECT_OPTIMISATION_IDS,
+    OPTIMIZATION_TASKS, META_PROMPT_TEMPLATES, AVAILABLE_LLMS, JUDGE_PROMPT_TEMPLATE, DEFAULT_PROJECT_OPTIMISATION_IDS,
     DEFAULT_BATCH_CONFIG, DEFAULT_BATCH_RECOMMENDATIONS_CONFIG, DEFAULT_BATCH_SOLUTIONS_CONFIG,
     DEFAULT_BATCH_EVALUATION_CONFIG, DEFAULT_PROJECT_ID,
-    DEFAULT_META_PROMPT_LLM, DEFAULT_CODE_OPTIMIZATION_LLM, DEFAULT_SCORING_LLM
+    DEFAULT_META_PROMPT_LLM, DEFAULT_CODE_OPTIMIZATION_LLM, DEFAULT_SCORING_LLM,
+    ALL_PROMPTING_TEMPLATES, BASELINE_PROMPTING_TEMPLATES
 )
+
 from loguru import logger
 import sys
-from artemis_client.falcon.client import FalconSettings, ThanosSettings, FalconClient
+from artemis_client.falcon.client import FalconSettings, FalconClient
+from artemis_client.base_auth import ThanosSettings
 from vision_models.service.llm import LLMType
 
 # Configure the Streamlit page
@@ -530,19 +533,23 @@ def configure_batch_recommendations():
         )
     
     # Template selection
-    st.markdown("#### 📝 Meta-Prompt Templates")
+    st.markdown("#### 📝 Prompting Techniques Configuration")
+    st.markdown("*Configure techniques for ASE25 MPCO framework evaluation*")
     
     # Initialize template states in session state if not exists
     if "template_states" not in st.session_state:
         st.session_state.template_states = {}
-        for template_id in META_PROMPT_TEMPLATES.keys():
+        for template_id in ALL_PROMPTING_TEMPLATES.keys():
             st.session_state.template_states[template_id] = {
                 "selected": template_id in batch_config["selected_templates"],
-                "template": META_PROMPT_TEMPLATES[template_id]["template"]
+                "template": ALL_PROMPTING_TEMPLATES[template_id]["template"]
             }
     
     # Template selection and editing
     selected_templates = []
+    
+    # Group techniques by category
+    st.markdown("##### 🧠 Meta-Prompt Templates (MPCO Framework)")
     for template_id, template_info in META_PROMPT_TEMPLATES.items():
         col1, col2 = st.columns([1, 11])
         with col1:
@@ -554,6 +561,46 @@ def configure_batch_recommendations():
         with col2:
             st.markdown(f"**{template_info['name']}**")
             st.markdown(f"*{template_info['description']}*")
+            
+            # Only show template text area if template is selected
+            if is_selected:
+                template_text = st.text_area(
+                    "Template Content",
+                    value=st.session_state.template_states[template_id]["template"],
+                    key=f"template_text_{template_id}",
+                    height=200
+                )
+                st.session_state.template_states[template_id]["template"] = template_text
+                selected_templates.append(template_id)
+    
+    # Baseline Prompting Methods
+    st.markdown("##### 📊 Baseline Prompting Methods")
+    
+    # Use baseline techniques from shared templates
+    baseline_techniques = BASELINE_PROMPTING_TEMPLATES
+    
+    # Initialize template states for baseline techniques if not present
+    for template_id, template_info in baseline_techniques.items():
+        if template_id not in st.session_state.template_states:
+            st.session_state.template_states[template_id] = {
+                "template": template_info["template"],
+                "selected": False
+            }
+    
+    for template_id, template_info in baseline_techniques.items():
+        col1, col2 = st.columns([1, 11])
+        with col1:
+            is_selected = st.checkbox(
+                "",
+                key=f"template_{template_id}",
+                value=st.session_state.template_states[template_id]["selected"]
+            )
+        with col2:
+            st.markdown(f"**{template_info['name']}**")
+            st.markdown(f"*{template_info['description']}*")
+            
+            # Update selection state
+            st.session_state.template_states[template_id]["selected"] = is_selected
             
             # Only show template text area if template is selected
             if is_selected:
@@ -858,11 +905,15 @@ def configure_batch_recommendations():
                 "constructs_per_project": constructs_per_project,
                 "meta_prompt_llm": meta_prompt_llm,
                 "code_optimization_llm": code_optimization_llm,
-                "selected_task": selected_task,
-                "selected_templates": selected_templates,
-                "include_baseline": include_baseline,
-                "baseline_prompt": baseline_prompt if include_baseline else None,
-                "selected_constructs": all_selected_constructs
+                            "selected_task": selected_task,
+            "selected_templates": selected_templates,
+            "include_baseline": include_baseline,
+            "baseline_prompt": baseline_prompt if include_baseline else None,
+            "selected_constructs": all_selected_constructs,
+
+            "custom_templates": {template_id: st.session_state.template_states[template_id]["template"] 
+                               for template_id in selected_templates 
+                               if template_id in st.session_state.template_states}
             }
         })
         
@@ -1177,14 +1228,13 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
                 selected_templates.append(template_name)
     
     if selected_templates:
-        st.markdown(f"#### 📊 Solutions Preview for Selected Templates")
+        st.markdown(f"#### 📊 Recommendation Analysis for Selected Templates")
         st.markdown(f"**Selected templates:** {', '.join(selected_templates)}")
         st.markdown(f"**Selected LLM type:** {selected_llm_type}")
-        st.markdown("**What this will create:**")
         
-        # Analyze what will be created for each template and project combination
-        total_solutions_to_create = 0
-        solution_preview_data = []
+        # Detailed analysis of recommendations per template
+        all_analysis_data = []
+        duplicate_warnings = []
         all_selected_recommendations = []
         
         for selected_template in selected_templates:
@@ -1202,7 +1252,7 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
                 ]
                 
                 if template_recommendations:
-                    # Group by construct to count unique constructs
+                    # Group by construct to detect duplicates and select best one
                     construct_groups = {}
                     for rec in template_recommendations:
                         construct_id = rec["construct_id"]
@@ -1210,51 +1260,143 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
                             construct_groups[construct_id] = []
                         construct_groups[construct_id].append(rec)
                     
-                    num_constructs = len(construct_groups)
-                    num_specs = len(template_recommendations)
+                    # Analyze each construct group
+                    deduplicated_recommendations = []
+                    for construct_id, construct_recs in construct_groups.items():
+                        if len(construct_recs) > 1:
+                            # Multiple recommendations for same construct - show warning
+                            duplicate_warnings.append(
+                                f"⚠️ **{project_name}** - **{selected_template}**: Construct {construct_id[:8]}... has {len(construct_recs)} recommendations. Using most recent one."
+                            )
+                            # Sort by created_at or ai_run_id to get most recent
+                            best_rec = sorted(construct_recs, key=lambda x: x.get("created_at", ""), reverse=True)[0]
+                        else:
+                            best_rec = construct_recs[0]
+                        
+                        # Add project_id to the recommendation
+                        best_rec["project_id"] = project_id
+                        deduplicated_recommendations.append(best_rec)
                     
-                    solution_preview_data.append({
+                    # Add analysis data
+                    num_constructs = len(construct_groups)
+                    total_recommendations = len(template_recommendations)
+                    duplicate_count = total_recommendations - num_constructs
+                    
+                    all_analysis_data.append({
                         "Project": project_name,
                         "Template": selected_template,
                         "Constructs": num_constructs,
-                        "Specs": num_specs
+                        "Total Recs": total_recommendations,
+                        "Duplicates": duplicate_count,
+                        "Final Specs": num_constructs,  # After deduplication
+                        "Status": "✅ Ready" if duplicate_count == 0 else f"⚠️ {duplicate_count} duplicates"
                     })
                     
-                    # Add to all selected recommendations for solution creation
-                    for rec in template_recommendations:
-                        # Ensure project_id is included in the recommendation
-                        rec["project_id"] = project_id
-                    
-                    all_selected_recommendations.extend(template_recommendations)
-                    total_solutions_to_create += 1  # One solution per project-template combination
+                    all_selected_recommendations.extend(deduplicated_recommendations)
         
-        if solution_preview_data:
-            # Display preview table
-            preview_df = pd.DataFrame(solution_preview_data)
-            st.dataframe(preview_df, use_container_width=True)
+        if all_analysis_data:
+            # Display detailed analysis table
+            st.markdown("#### 📋 Recommendation Distribution Analysis")
+            analysis_df = pd.DataFrame(all_analysis_data)
+            st.dataframe(analysis_df, use_container_width=True)
+            
+            # Add detailed breakdown per template
+            if len(selected_templates) > 1:
+                st.markdown("#### 🔍 Detailed Breakdown by Template")
+                
+                for selected_template in selected_templates:
+                    with st.expander(f"📊 {selected_template} - Detailed View", expanded=False):
+                        template_analysis = [row for row in all_analysis_data if row["Template"] == selected_template]
+                        
+                        if template_analysis:
+                            template_df = pd.DataFrame(template_analysis)
+                            st.dataframe(template_df, use_container_width=True)
+                            
+                            # Show construct-level details for this template
+                            st.markdown("**Construct Distribution:**")
+                            
+                            for project_id in selected_projects:
+                                project_data = project_template_data[project_id]
+                                project_name = project_data["project_name"]
+                                recommendations = project_data["recommendations"]
+                                
+                                # Find recommendations for this template and project
+                                template_recs = [
+                                    rec for rec in recommendations 
+                                    if (rec["template_name"] == selected_template and 
+                                        rec.get("source") != "placeholder" and
+                                        selected_llm_type.lower() in rec.get("spec_name", "").lower())
+                                ]
+                                
+                                if template_recs:
+                                    construct_groups = {}
+                                    for rec in template_recs:
+                                        construct_id = rec["construct_id"]
+                                        if construct_id not in construct_groups:
+                                            construct_groups[construct_id] = []
+                                        construct_groups[construct_id].append(rec)
+                                    
+                                    st.markdown(f"**{project_name}:**")
+                                    construct_details = []
+                                    for construct_id, recs in construct_groups.items():
+                                        status = "✅ Single" if len(recs) == 1 else f"⚠️ {len(recs)} variants"
+                                        construct_details.append({
+                                            "Construct ID": construct_id[:12] + "...",
+                                            "Recommendations": len(recs),
+                                            "Status": status
+                                        })
+                                    
+                                    if construct_details:
+                                        construct_df = pd.DataFrame(construct_details)
+                                        st.dataframe(construct_df, use_container_width=True)
+                        else:
+                            st.info(f"No data available for {selected_template}")
+            
+            # Show duplicate warnings if any
+            if duplicate_warnings:
+                st.markdown("#### ⚠️ Duplicate Recommendations Detected")
+                st.markdown("The following constructs have multiple recommendations for the same template. The most recent recommendation will be used:")
+                for warning in duplicate_warnings:
+                    st.markdown(f"- {warning}")
             
             # Show summary metrics
-            total_constructs = sum(row["Constructs"] for row in solution_preview_data)
-            total_specs = sum(row["Specs"] for row in solution_preview_data)
-            unique_projects = len(set(row["Project"] for row in solution_preview_data))
+            total_constructs = sum(row["Constructs"] for row in all_analysis_data)
+            total_original_specs = sum(row["Total Recs"] for row in all_analysis_data)
+            total_final_specs = sum(row["Final Specs"] for row in all_analysis_data)
+            total_duplicates = sum(row["Duplicates"] for row in all_analysis_data)
+            total_solutions_to_create = len(all_analysis_data)
             
-            col1, col2, col3, col4 = st.columns(4)
+            st.markdown("#### 📊 Summary")
+            col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
-                st.metric("Templates Selected", len(selected_templates))
-            with col2:
                 st.metric("Solutions to Create", total_solutions_to_create)
+            with col2:
+                st.metric("Unique Constructs", total_constructs)
             with col3:
-                st.metric("Total Constructs", total_constructs)
+                st.metric("Original Recs", total_original_specs)
             with col4:
-                st.metric("Total Specs", total_specs)
+                st.metric("Final Specs", total_final_specs)
+            with col5:
+                st.metric("Duplicates Removed", total_duplicates)
+            
+            # Add explanation
+            st.info(
+                "💡 **Solution Creation Logic**: Each solution will contain exactly one spec per construct. "
+                "If multiple recommendations exist for the same construct+template combination, "
+                "only the most recent one will be used."
+            )
             
             st.markdown("**Solution Structure:**")
             st.markdown(f"- **{total_solutions_to_create} solutions** will be created (one per project-template combination)")
             st.markdown(f"- **{len(selected_templates)} templates** selected: {', '.join(selected_templates)}")
             st.markdown(f"- **LLM type:** {selected_llm_type} (ensures one spec per construct)")
+            unique_projects = len(set(row["Project"] for row in all_analysis_data))
             st.markdown(f"- **{unique_projects} projects** involved")
-            st.markdown(f"- Each solution will contain **all constructs** from that project that have the specific template's recommendations from {selected_llm_type}")
-            st.markdown(f"- Total of **{total_specs} specifications** across all solutions")
+            st.markdown(f"- Each solution will contain **exactly one spec per construct** (duplicates removed)")
+            st.markdown(f"- Total of **{total_final_specs} specifications** across all solutions after deduplication")
+            
+            if total_duplicates > 0:
+                st.success(f"✅ **Deduplication Applied**: {total_duplicates} duplicate recommendations were removed to ensure clean solutions with one spec per construct.")
             
             # Update configuration
             update_batch_session_state({
@@ -1263,8 +1405,8 @@ def configure_solutions_from_prompt_versions(state, batch_config, selected_proje
                     "source_type": "prompt_versions",
                     "selected_templates": selected_templates,  # Now multiple templates
                     "selected_llm_type": selected_llm_type,    # Add LLM type filter
-                    "selected_recommendations": all_selected_recommendations,
-                    "solution_preview": solution_preview_data,
+                    "selected_recommendations": all_selected_recommendations,  # Deduplicated recommendations
+                    "solution_preview": all_analysis_data,  # Updated preview data
                     "total_solutions": total_solutions_to_create
                 }
             })
@@ -1693,18 +1835,42 @@ def execute_batch_recommendations():
     status_text = st.empty()
     results_container = st.container()
     
+    # Container for displaying generated prompts
+    generated_prompts_container = st.container()
+    
     def progress_callback(progress_data):
-        """Simplified progress callback - only shows basic progress and status"""
+        """Enhanced progress callback that displays generated prompts"""
         if isinstance(progress_data, dict):
             # Handle structured progress data
             message = progress_data.get("message", "")
             progress = progress_data.get("progress", None)
+            status = progress_data.get("status", "")
             
             # Update progress bar and status
             if progress is not None:
                 progress_bar.progress(progress)
             if message:
                 status_text.text(message)
+            
+            # Display generated prompts as they are created
+            if status == "meta_prompt_ready":
+                template_id = progress_data.get("template_id", "")
+                filled_meta_prompt = progress_data.get("filled_meta_prompt", "")
+                
+                with generated_prompts_container:
+                    with st.expander(f"🧠 Meta-Prompt for {template_id}", expanded=False):
+                        st.markdown("**Filled Meta-Prompt Template:**")
+                        st.text_area("Meta-Prompt", filled_meta_prompt, height=150, key=f"meta_{template_id}_{hash(filled_meta_prompt)}")
+            
+            elif status == "prompt_ready":
+                template_id = progress_data.get("template_id", "")
+                generated_prompt = progress_data.get("generated_prompt", "")
+                
+                with generated_prompts_container:
+                    with st.expander(f"✨ Generated Optimization Prompt for {template_id}", expanded=True):
+                        st.markdown("**Final Generated Prompt:**")
+                        st.text_area("Generated Prompt", generated_prompt, height=200, key=f"prompt_{template_id}_{hash(generated_prompt)}")
+                        st.success(f"✅ Successfully generated prompt using {template_id}")
         
         elif isinstance(progress_data, tuple) and len(progress_data) == 2:
             # Handle old format: (progress, message)
@@ -1744,8 +1910,11 @@ def execute_batch_recommendations():
                         project_id=project_id,
                         selected_templates=batch_config.get("selected_templates", []),
                         current_prompt=batch_config.get("baseline_prompt", OPTIMIZATION_TASKS[batch_config["selected_task"]]["default_prompt"]),
+                        custom_templates=batch_config.get("custom_templates", {}),
                         progress_callback=progress_callback
                     )
+                    
+
                     
                     # IMPORTANT: Setup evaluator clients first!
                     status_text.text(f"Setting up API clients for {project_config['name']}...")
@@ -2773,6 +2942,10 @@ def execute_batch_analysis():
             # Display results
             with results_container:
                 display_box_plot_analysis_results(analysis_results)
+                
+                # Add performance improvement analysis
+                from meta_artemis_modules.performance_improvement_analysis import display_performance_improvement_analysis
+                display_performance_improvement_analysis(analysis_results)
     
     except Exception as e:
         progress_bar.progress(0)
@@ -2931,13 +3104,7 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
         construct_rank = top_ranked_constructs.index(construct_id) + 1
         construct_performance_data[construct_id] = {
             "rank": construct_rank,
-            "versions": {
-                "original": [],
-                "baseline": [],
-                "simplified": [],
-                "standard": [],
-                "enhanced": []
-            },
+            "versions": {},  # Use dynamic dictionary to accommodate any template ID
             "total_evaluations": 0,
             "missing_versions": []
         }
@@ -2994,7 +3161,12 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
                                 values = value.get('values', [])
                                 if values and isinstance(values, list):
                                     solution_runtime_data.extend([float(v) for v in values if isinstance(v, (int, float))])
+                                    logger.debug(f"Found {len(values)} runtime measurements in fallback key: {key}")
                                     break
+                            elif isinstance(value, (int, float)):
+                                solution_runtime_data.append(float(value))
+                                logger.debug(f"Found single runtime measurement in key: {key}")
+                                break
                 
                 # Apply the SAME runtime data to ALL top-ranked constructs (they all use original code)
                 if solution_runtime_data:
@@ -3002,9 +3174,12 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
                     
                     for construct_id in top_ranked_constructs:
                         # All constructs get the same original runtime data since they all use original code
-                        construct_performance_data[construct_id]["versions"]["original"].extend(solution_runtime_data)
+                        version_type = "original"
+                        if version_type not in construct_performance_data[construct_id]["versions"]:
+                            construct_performance_data[construct_id]["versions"][version_type] = []
+                        construct_performance_data[construct_id]["versions"][version_type].extend(solution_runtime_data)
                         construct_performance_data[construct_id]["total_evaluations"] += len(solution_runtime_data)
-                        logger.debug(f"📊 Added {len(solution_runtime_data)} runtime measurements for construct {construct_id[:8]}... version 'original' (shared from solution)")
+                        logger.debug(f"📊 Added {len(solution_runtime_data)} runtime measurements for construct {construct_id[:8]}... version '{version_type}' (shared from solution)")
                 else:
                     logger.warning(f"⚠️ No runtime data found in original solution {solution_id[:8]}...")
             
@@ -3026,6 +3201,9 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
                     # Only apply to the target construct (construct-level analysis)
                     runtime_data = extract_runtime_from_solution_results(solution_results_summary, target_construct_id)
                     if runtime_data:
+                        # Ensure the version type key exists in the dictionary
+                        if solution_version_type not in construct_performance_data[target_construct_id]["versions"]:
+                            construct_performance_data[target_construct_id]["versions"][solution_version_type] = []
                         construct_performance_data[target_construct_id]["versions"][solution_version_type].extend(runtime_data)
                         construct_performance_data[target_construct_id]["total_evaluations"] += len(runtime_data)
                         logger.debug(f"📊 Added {len(runtime_data)} runtime measurements for construct {target_construct_id[:8]}... version '{solution_version_type}' (construct-level)")
@@ -3036,7 +3214,10 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
                 # Version-level solution: multiple specs = version-level analysis
                 logger.debug(f"🔍 Solution {solution_id[:8]}... is VERSION-LEVEL solution ({num_specs} specs)")
                 version_level_solutions.append(solution)
-                # Don't add to construct_performance_data - handle separately
+                # Version-level solutions should NOT contaminate construct-level analysis
+                # They will be processed separately in process_version_level_solutions()
+                
+
         
         except Exception as e:
             logger.warning(f"⚠️ Error processing solution {solution.get('solution_id', 'unknown')}: {str(e)}")
@@ -3069,9 +3250,11 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
     logger.info(f"📊 Analysis summary: {constructs_with_data}/{len(top_ranked_constructs)} constructs have data, {total_evaluations} total evaluations")
     
     # Log version distribution
-    version_totals = {"original": 0, "baseline": 0, "simplified": 0, "standard": 0, "enhanced": 0}
+    version_totals = {}
     for construct_data in construct_performance_data.values():
         for version, data in construct_data["versions"].items():
+            if version not in version_totals:
+                version_totals[version] = 0
             version_totals[version] += len(data)
     
     logger.info(f"🔍 Version distribution across all constructs:")
@@ -3084,13 +3267,7 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
         logger.warning(f"⚠️ Versions with no data: {', '.join(empty_versions)}")
     
     # Prepare data for visualization
-    versions_data = {
-        "original": [],
-        "baseline": [],
-        "simplified": [],
-        "standard": [],
-        "enhanced": []
-    }
+    versions_data = {}
     
     individual_constructs = {}
     
@@ -3109,6 +3286,8 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
                 if version == "original":
                     # Only add original data once to the overall project data
                     if not original_data_added:
+                        if version not in versions_data:
+                            versions_data[version] = []
                         versions_data[version].extend(runtime_list)
                         original_data_added = True
                         logger.debug(f"📊 Added {len(runtime_list)} original runtime measurements to overall project data (once)")
@@ -3117,6 +3296,8 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
                     individual_constructs[construct_name][version] = np.mean(runtime_list)
                 else:
                     # For non-original versions, add normally
+                    if version not in versions_data:
+                        versions_data[version] = []
                     versions_data[version].extend(runtime_list)
                     
                     # Add to individual construct data (use mean if multiple values)
@@ -3207,6 +3388,16 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
     # Process version-level solutions for separate analysis
     version_level_data = process_version_level_solutions(version_level_solutions, top_ranked_constructs, project_id, evaluator)
     
+    # Debug logging: show final construct_performance_data structure
+    logger.debug(f"Final construct_performance_data summary:")
+    for construct_id, construct_data in construct_performance_data.items():
+        construct_rank = construct_data.get("rank", "?")
+        versions = construct_data.get("versions", {})
+        total_evals = construct_data.get("total_evaluations", 0)
+        logger.debug(f"Construct Rank {construct_rank} ({construct_id[:8]}...): {total_evals} total evaluations")
+        for version, data in versions.items():
+            logger.debug(f"   Version '{version}': {len(data)} measurements")
+    
     analysis_result = {
         "project_name": project_name,
         "num_constructs": len(top_ranked_constructs),
@@ -3235,6 +3426,8 @@ def analyze_project_runtime_data(project_id: str, project_name: str, solutions_w
         "version_level_data": version_level_data
     }
     
+    logger.debug(f"Returning analysis_result with construct_details containing {len(construct_performance_data)} constructs")
+    
     return analysis_result
 
 def process_version_level_solutions(version_level_solutions: List[dict], top_ranked_constructs: List[str], project_id: str, evaluator) -> Dict[str, Any]:
@@ -3243,13 +3436,7 @@ def process_version_level_solutions(version_level_solutions: List[dict], top_ran
         "solutions": [],
         "version_stats": {},
         "total_solutions": len(version_level_solutions),
-        "solutions_by_version": {
-            "original": [],
-            "baseline": [],
-            "simplified": [],
-            "standard": [],
-            "enhanced": []
-        }
+        "solutions_by_version": {}  # Use dynamic dictionary to accommodate any template ID
     }
     
     logger.info(f"🔍 Processing {len(version_level_solutions)} version-level solutions")
@@ -3288,7 +3475,23 @@ def process_version_level_solutions(version_level_solutions: List[dict], top_ran
                                 total_runtime_measurements += len(values)
                                 logger.debug(f"Found {len(values)} solution-level runtime measurements in {metric_name}")
                 
-                # If no solution-level data, fall back to construct-level aggregation
+                # If no solution-level data, try additional extraction methods
+                if not all_runtime_data:
+                    # Try extracting from any field containing "runtime" or "time"
+                    for key, value in solution_results_summary.items():
+                        if "runtime" in str(key).lower() or "time" in str(key).lower():
+                            if isinstance(value, dict):
+                                values = value.get('values', [])
+                                if values and isinstance(values, list):
+                                    all_runtime_data.extend([float(v) for v in values if isinstance(v, (int, float))])
+                                    logger.debug(f"Found {len(values)} runtime measurements in version-level key: {key}")
+                                    break
+                            elif isinstance(value, (int, float)):
+                                all_runtime_data.append(float(value))
+                                logger.debug(f"Found single runtime measurement in version-level key: {key}")
+                                break
+                
+                # Final fallback: construct-level aggregation
                 if not all_runtime_data:
                     for construct_id in top_ranked_constructs:
                         runtime_data = extract_runtime_from_solution_results(solution_results_summary, construct_id)
@@ -3296,7 +3499,9 @@ def process_version_level_solutions(version_level_solutions: List[dict], top_ran
                             all_runtime_data.extend(runtime_data)
                             constructs_with_data += 1
                     total_runtime_measurements = len(all_runtime_data)
+                    logger.debug(f"Used construct-level fallback, found {total_runtime_measurements} measurements")
                 else:
+                    total_runtime_measurements = len(all_runtime_data)
                     # Count constructs that have specs in this solution
                     constructs_with_data = len([spec for spec in solution_specs if spec.get("construct_id") in top_ranked_constructs])
             
@@ -3315,6 +3520,9 @@ def process_version_level_solutions(version_level_solutions: List[dict], top_ran
             }
             
             version_level_data["solutions"].append(solution_info)
+            # Ensure the version type key exists in the dictionary
+            if solution_version_type not in version_level_data["solutions_by_version"]:
+                version_level_data["solutions_by_version"][solution_version_type] = []
             version_level_data["solutions_by_version"][solution_version_type].append(solution_info)
             
             logger.debug(f"📊 Version-level solution {solution_id[:8]}... version '{solution_version_type}': {total_runtime_measurements} measurements")
@@ -3323,7 +3531,7 @@ def process_version_level_solutions(version_level_solutions: List[dict], top_ran
             logger.warning(f"⚠️ Error processing version-level solution {solution.get('solution_id', 'unknown')}: {str(e)}")
     
     # Calculate statistics for ALL versions (including those with no data)
-    all_versions = ["original", "baseline", "simplified", "standard", "enhanced"]
+    all_versions = list(version_level_data["solutions_by_version"].keys())
     
     # Prepare data for Scott-Knott ESD test
     version_runtime_data = {}
@@ -3518,22 +3726,62 @@ def determine_version_type_from_spec(solution: dict, spec_id: str, project_id: s
                     template_name = rec.get("template_name", "")
                     template_id = rec.get("template_id", "")
                     
-                    # Map template names to version types
-                    if "Enhanced" in template_name or template_id == "enhanced":
-                        logger.debug(f"   -> Found Enhanced Template spec: 'enhanced'")
-                        return "enhanced"
-                    elif "Standard" in template_name or template_id == "standard":
-                        logger.debug(f"   -> Found Standard Template spec: 'standard'")
-                        return "standard"
-                    elif "Simplified" in template_name or template_id == "simplified":
-                        logger.debug(f"   -> Found Simplified Template spec: 'simplified'")
+                    # Map template names and IDs to version types using comprehensive mapping
+                    from meta_artemis_modules.shared_templates import ALL_PROMPTING_TEMPLATES
+                    
+                    # First try to use template_id for exact matching
+                    if template_id in ALL_PROMPTING_TEMPLATES:
+                        logger.debug(f"   -> Found template ID '{template_id}': returning '{template_id}'")
+                        return template_id
+                    
+                    # Handle legacy template IDs
+                    elif template_id == "enhanced" or "Enhanced" in template_name or "MPCO" in template_name:
+                        logger.debug(f"   -> Found MPCO/Enhanced Template: returning 'mpco'")
+                        return "mpco"
+                    elif template_id == "standard" or "Standard" in template_name:
+                        logger.debug(f"   -> Found Standard Template: returning 'standard'")
+                        return "standard"  
+                    elif template_id == "simplified" or "Simplified" in template_name:
+                        logger.debug(f"   -> Found Simplified Template: returning 'simplified'")
                         return "simplified"
-                    elif "Baseline" in template_name or template_id == "baseline":
-                        logger.debug(f"   -> Found Baseline spec: 'baseline'")
+                    elif template_id == "baseline" or "Baseline" in template_name:
+                        logger.debug(f"   -> Found Baseline: returning 'baseline'")
                         return "baseline"
+                    
+                    # Check for new baseline prompting templates by name
+                    elif "Direct Prompt" in template_name or "direct" in template_name.lower():
+                        logger.debug(f"   -> Found Direct Prompt: returning 'direct_prompt'")
+                        return "direct_prompt"
+                    elif "Chain-of-Thought" in template_name or "cot" in template_name.lower():
+                        logger.debug(f"   -> Found Chain-of-Thought: returning 'chain_of_thought'")
+                        return "chain_of_thought"
+                    elif "Few-Shot" in template_name or ("few" in template_name.lower() and "shot" in template_name.lower()):
+                        logger.debug(f"   -> Found Few-Shot: returning 'few_shot'")
+                        return "few_shot"
+                    elif "Metacognitive" in template_name or "metacognitive" in template_name.lower():
+                        logger.debug(f"   -> Found Metacognitive: returning 'metacognitive'")
+                        return "metacognitive"
+                    elif "Contextual Prompting" in template_name or "contextual" in template_name.lower():
+                        logger.debug(f"   -> Found Contextual Prompting: returning 'contextual_prompting'")
+                        return "contextual_prompting"
+                    
+                    # Check for ablation study templates
+                    elif "No Project Context" in template_name or "no_project_context" in template_name.lower():
+                        logger.debug(f"   -> Found No Project Context: returning 'no_project_context'")
+                        return "no_project_context"
+                    elif "No Task Context" in template_name or "no_task_context" in template_name.lower():
+                        logger.debug(f"   -> Found No Task Context: returning 'no_task_context'")
+                        return "no_task_context"
+                    elif "No LLM Context" in template_name or "no_llm_context" in template_name.lower():
+                        logger.debug(f"   -> Found No LLM Context: returning 'no_llm_context'")
+                        return "no_llm_context"
+                    elif "Minimal Context" in template_name or "minimal_context" in template_name.lower():
+                        logger.debug(f"   -> Found Minimal Context: returning 'minimal_context'")
+                        return "minimal_context"
+                        
                     else:
-                        logger.debug(f"   -> Found spec with template '{template_name}' (id: {template_id}): defaulting to 'standard'")
-                        return "standard"
+                        logger.debug(f"   -> Unknown template '{template_name}' (id: {template_id}): returning template_id or 'unknown'")
+                        return template_id if template_id else "unknown"
         
         logger.debug(f"   -> No cached recommendation found for spec {spec_id[:8]}..., using fallback method")
         
@@ -3592,15 +3840,17 @@ def determine_version_type_from_solution_metadata(solution: dict) -> str:
     
     # Use hash-based distribution as final fallback
     if solution_id:
-        hash_value = hash(solution_id) % 4  # Only use 4 versions (excluding original)
-        version_mapping = ["baseline", "simplified", "standard", "enhanced"]
-        fallback_version = version_mapping[hash_value]
+        # Use common template IDs for fallback
+        from meta_artemis_modules.shared_templates import BASELINE_PROMPTING_TEMPLATES, META_PROMPT_TEMPLATES
+        common_templates = list(BASELINE_PROMPTING_TEMPLATES.keys())[:4] if BASELINE_PROMPTING_TEMPLATES else ["direct_prompt", "chain_of_thought", "few_shot", "metacognitive"]
+        hash_value = hash(solution_id) % len(common_templates)
+        fallback_version = common_templates[hash_value]
         logger.debug(f"   -> Using hash-based distribution: {fallback_version}")
         return fallback_version
     
     # Final fallback
-    logger.debug(f"   -> Final fallback: 'standard'")
-    return "standard"
+    logger.debug(f"   -> Final fallback: 'unknown'")
+    return "unknown"
 
 def aggregate_cross_project_results(project_results: Dict[str, Dict], config: dict) -> Dict[str, Any]:
     """Aggregate results across all projects"""
@@ -3669,7 +3919,7 @@ def aggregate_cross_project_results(project_results: Dict[str, Dict], config: di
 
 def main():
     """Main application function"""
-    st.title("⚡ Batch Meta Artemis Application")
+    st.title("⚡ Artemis Performance Evaluation Application")
     st.markdown("*Large-scale evaluations through specialized batch operations*")
     
     # Initialize session state
